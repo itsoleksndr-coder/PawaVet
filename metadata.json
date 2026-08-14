@@ -1,0 +1,6 @@
+{
+  "name": "PawFect - Veterinary Practice Management & Auth System",
+  "description": "Multi-tenant veterinary practice management software with multi-role RBAC, clinic data isolation, secure session handling, and comprehensive security audit logs.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
