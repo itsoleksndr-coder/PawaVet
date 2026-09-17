@@ -1,3 +1,4 @@
+import { UrgentQueue } from "./components/urgent/UrgentQueue";
 import React, { useState } from "react";
 import { SpeedInsights } from "@vercel/speed-insights/react";
 import { Analytics } from "@vercel/analytics/react";
@@ -5,7 +6,6 @@ import { AuthProvider, useAuth } from "./context/AuthContext";
 import { DataProvider, useData } from "./context/DataContext";
 import { Header } from "./components/common/Header";
 import { Sidebar, NavSection } from "./components/common/Sidebar";
-import { RoleSwitcherModal } from "./components/common/RoleSwitcherModal";
 import { TwoFactorSetupModal } from "./components/auth/TwoFactorSetupModal";
 import { ActiveSessionsManager } from "./components/auth/ActiveSessionsManager";
 import { LockScreenModal } from "./components/auth/LockScreenModal";
@@ -29,10 +29,11 @@ import { RemindersView } from "./components/reminders/RemindersView";
 import { Pet, MedicalRecord } from "./types";
 
 const MainAppContent: React.FC = () => {
-  const { activeRole, isPetOwner } = useAuth();
+  const { activeRole, isPetOwner, hasPermission } = useAuth();
+  const { loading: dataLoading, error: dataError, refresh, pets } = useData();
 
   // Navigation State
-  const [activeSection, setActiveSection] = useState<NavSection>("dashboard");
+  const [activeSection, setActiveSection] = useState<NavSection>("pets");
 
   // Modals State
   const [isRoleSwitcherOpen, setIsRoleSwitcherOpen] = useState(false);
@@ -44,7 +45,9 @@ const MainAppContent: React.FC = () => {
   const [selectedPet, setSelectedPet] = useState<Pet | null>(null);
   const [isAddPetOpen, setIsAddPetOpen] = useState(false);
   const [isCreateRecordOpen, setIsCreateRecordOpen] = useState(false);
-  const [selectedRecord, setSelectedRecord] = useState<MedicalRecord | null>(null);
+  const [selectedRecord, setSelectedRecord] = useState<MedicalRecord | null>(
+    null,
+  );
   const [isCreateAptOpen, setIsCreateAptOpen] = useState(false);
   const [isCreateInvoiceOpen, setIsCreateInvoiceOpen] = useState(false);
 
@@ -67,20 +70,32 @@ const MainAppContent: React.FC = () => {
 
         {/* Content View Area */}
         <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto w-full">
+          {dataLoading && <p role="status">Loading clinic records…</p>}
+          {dataError && (
+            <div role="alert" className="p-4 bg-rose-950 rounded-xl mb-4">
+              {dataError}
+              <button onClick={() => void refresh()} className="ml-4 underline">
+                Retry
+              </button>
+            </div>
+          )}
           {activeSection === "dashboard" && (
-            <RoleAdaptiveDashboard
-              onNavigate={(sec) => setActiveSection(sec)}
-              onOpenCreateRecord={() => setIsCreateRecordOpen(true)}
-              onOpenCreateApt={() => setIsCreateAptOpen(true)}
-              onOpenAddPet={() => setIsAddPetOpen(true)}
-            />
+            <div className="space-y-4">
+              <h1 className="text-2xl font-bold">Clinic workspace</h1>
+              <p>{pets.length} saved patients</p>
+              <button
+                className="bg-teal-600 p-3 rounded-xl"
+                onClick={() => setActiveSection("pets")}
+              >
+                View patients
+              </button>
+            </div>
           )}
 
           {activeSection === "owner_portal" && (
-            <PetOwnerPortal
-              onOpenCreateApt={() => setIsCreateAptOpen(true)}
+            <PetList
+              onSelectPet={setSelectedPet}
               onOpenAddPet={() => setIsAddPetOpen(true)}
-              onSelectPet={(p) => setSelectedPet(p)}
             />
           )}
 
@@ -91,28 +106,30 @@ const MainAppContent: React.FC = () => {
             />
           )}
 
-          {activeSection === "records" && (
-            <MedicalRecordsList
-              onSelectRecord={(r) => setSelectedRecord(r)}
-              onOpenCreate={() => setIsCreateRecordOpen(true)}
-            />
+          {activeSection === "urgent" && <UrgentQueue />}
+          {activeSection === "staff" && hasPermission("staff:read") && (
+            <StaffManagementView />
           )}
-
-          {activeSection === "appointments" && (
-            <AppointmentCalendar onOpenCreate={() => setIsCreateAptOpen(true)} />
+          {activeSection === "audit" &&
+            hasPermission("clinic:audit_logs_read") && <SecurityAuditView />}
+          {[
+            "records",
+            "appointments",
+            "reminders",
+            "billing",
+            "telemed",
+          ].includes(activeSection) && (
+            <div className="bg-slate-900 p-6 rounded-xl space-y-3">
+              <h2 className="text-xl font-bold">
+                This workflow is not activated yet
+              </h2>
+              <p className="text-slate-300">
+                Patient registration and updates are available. This section
+                will open after its storage and service connections have been
+                verified.
+              </p>
+            </div>
           )}
-
-          {activeSection === "reminders" && <RemindersView />}
-
-          {activeSection === "billing" && (
-            <BillingDashboard onOpenCreateInvoice={() => setIsCreateInvoiceOpen(true)} />
-          )}
-
-          {activeSection === "staff" && <StaffManagementView />}
-
-          {activeSection === "audit" && <SecurityAuditView />}
-
-          {activeSection === "telemed" && <TelemedAndAiView />}
         </main>
       </div>
 
@@ -129,42 +146,38 @@ const MainAppContent: React.FC = () => {
         <button
           onClick={() => setActiveSection(isPetOwner ? "owner_portal" : "pets")}
           className={`p-2 rounded-xl flex flex-col items-center space-y-1 ${
-            activeSection === "pets" || activeSection === "owner_portal" ? "text-teal-400 font-bold" : ""
+            activeSection === "pets" || activeSection === "owner_portal"
+              ? "text-teal-400 font-bold"
+              : ""
           }`}
         >
           <span>{isPetOwner ? "My Pets" : "Patients"}</span>
         </button>
         <button
-          onClick={() => setActiveSection("appointments")}
+          onClick={() => setActiveSection("urgent")}
           className={`p-2 rounded-xl flex flex-col items-center space-y-1 ${
             activeSection === "appointments" ? "text-teal-400 font-bold" : ""
           }`}
         >
-          <span>Visits</span>
-        </button>
-        <button
-          onClick={() => setIsRoleSwitcherOpen(true)}
-          className="p-2 rounded-xl flex flex-col items-center space-y-1 text-purple-400 font-bold"
-        >
-          <span>Roles</span>
+          <span>Urgent care</span>
         </button>
       </div>
 
       {/* Global Modals */}
-      <RoleSwitcherModal
-        isOpen={isRoleSwitcherOpen}
-        onClose={() => setIsRoleSwitcherOpen(false)}
-      />
 
       <TwoFactorSetupModal
         isOpen={is2FAOpen}
         onClose={() => setIs2FAOpen(false)}
       />
 
-      <ActiveSessionsManager
-        isOpen={isSessionsOpen}
-        onClose={() => setIsSessionsOpen(false)}
-      />
+      {isSessionsOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/95 p-6 overflow-auto">
+          <button className="p-3" onClick={() => setIsSessionsOpen(false)}>
+            Close sessions
+          </button>
+          <ActiveSessionsManager />
+        </div>
+      )}
 
       <AuthModal
         isOpen={isAuthModalOpen}
@@ -218,12 +231,26 @@ const MainAppContent: React.FC = () => {
   );
 };
 
+const SessionGate: React.FC = () => {
+  const { loading, currentUser, isLocked } = useAuth();
+  if (loading)
+    return (
+      <div className="min-h-screen bg-slate-950 text-white p-8" role="status">
+        Checking your session…
+      </div>
+    );
+  if (!currentUser) return <AuthModal isOpen onClose={() => {}} />;
+  if (isLocked) return <LockScreenModal />;
+  return (
+    <DataProvider key={currentUser.id + currentUser.role}>
+      <MainAppContent />
+    </DataProvider>
+  );
+};
 export const App: React.FC = () => {
   return (
     <AuthProvider>
-      <DataProvider>
-        <MainAppContent />
-      </DataProvider>
+      <SessionGate />
     </AuthProvider>
   );
 };

@@ -1,212 +1,190 @@
 import React, { useState } from "react";
-import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
-import { Species, Pet } from "../../types";
-import { X, PawPrint, CheckCircle2 } from "lucide-react";
-
-interface AddPetModalProps {
+import { type Pet, type Species } from "../../types";
+export const AddPetModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
-}
-
-export const AddPetModal: React.FC<AddPetModalProps> = ({ isOpen, onClose }) => {
-  const { isPetOwner, currentUser } = useAuth();
-  const { addPet, petOwners } = useData();
-
-  const [name, setName] = useState("");
-  const [species, setSpecies] = useState<Species>("dog");
-  const [breed, setBreed] = useState("");
-  const [age, setAge] = useState("2 years");
-  const [dob, setDob] = useState("2024-01-01");
-  const [sex, setSex] = useState<Pet["sex"]>("Male (Neutered)");
-  const [weightKg, setWeightKg] = useState<number>(12.5);
-  const [color, setColor] = useState("Golden");
-  const [microchip, setMicrochip] = useState(`98514100${Math.floor(1000000 + Math.random() * 9000000)}`);
-  const [ownerId, setOwnerId] = useState(isPetOwner ? currentUser?.id || "owner-1" : petOwners[0]?.id || "owner-1");
-  const [ownerName, setOwnerName] = useState(isPetOwner ? currentUser?.name || "David Chen" : petOwners[0]?.name || "David Chen");
-  const [allergiesText, setAllergiesText] = useState("");
-  const [notes, setNotes] = useState("");
-
+}> = ({ isOpen, onClose }) => {
+  const { addPet, addOwner, petOwners } = useData();
+  const [name, setName] = useState(""),
+    [species, setSpecies] = useState<Species>("dog"),
+    [ownerId, setOwner] = useState(""),
+    [ownerName, setOwnerName] = useState(""),
+    [email, setEmail] = useState(""),
+    [weight, setWeight] = useState(""),
+    [notes, setNotes] = useState("");
+  const [sex, setSex] = useState<Pet["sex"]>("Male (Intact)"),
+    [error, setError] = useState(""),
+    [busy, setBusy] = useState(false);
   if (!isOpen) return null;
-
-  const handleSubmit = (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    const selectedOwner = petOwners.find((o) => o.id === ownerId);
-
-    addPet({
-      name,
-      species,
-      breed: breed || (species === "dog" ? "Mixed Breed Canine" : "Domestic Shorthair"),
-      age,
-      dateOfBirth: dob,
-      sex,
-      weightKg: Number(weightKg) || 10,
-      color: color || "Tan",
-      microchipNumber: microchip,
-      ownerId: isPetOwner ? currentUser?.id || "owner-1" : ownerId,
-      ownerName: isPetOwner ? currentUser?.name || "David Chen" : selectedOwner?.name || ownerName,
-      vaccinationStatus: "Up to date",
-      allergies: allergiesText ? allergiesText.split(",").map((s) => s.trim()) : [],
-      currentMedications: [],
-      notes,
-      photoUrl:
-        species === "dog"
-          ? "https://images.unsplash.com/photo-1543466835-00a7907e9de1?w=200&auto=format&fit=crop&q=80"
-          : species === "cat"
-          ? "https://images.unsplash.com/photo-1533738363-b7f9aef128ce?w=200&auto=format&fit=crop&q=80"
-          : "https://images.unsplash.com/photo-1585110396000-c9ffd4e4b308?w=200&auto=format&fit=crop&q=80",
-    });
-
-    onClose();
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      let id = ownerId;
+      if (!id) {
+        const owner = await addOwner({
+          name: ownerName,
+          email,
+          phone: "",
+          address: "",
+          emergencyContact: "",
+        });
+        id = owner.id;
+        setOwner(id);
+      }
+      await addPet({
+        name,
+        species,
+        breed: "",
+        age: "",
+        dateOfBirth: "",
+        sex,
+        weightKg: Number(weight),
+        color: "",
+        microchipNumber: "",
+        ownerId: id,
+        ownerName: "",
+        vaccinationStatus: "Unknown",
+        allergies: [],
+        currentMedications: [],
+        notes,
+      });
+      setName("");
+      setWeight("");
+      setNotes("");
+      onClose();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to save patient.");
+    } finally {
+      setBusy(false);
+    }
   };
-
+  const input =
+    "block w-full bg-slate-950 border border-slate-700 rounded-xl p-3 mt-1";
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
-      <div
-        className="w-full max-w-xl bg-slate-900 border border-slate-700 rounded-3xl shadow-2xl p-6 sm:p-7 space-y-5 text-slate-100 animate-in fade-in zoom-in-95"
-        onClick={(e) => e.stopPropagation()}
+    <div className="fixed inset-0 z-50 bg-slate-950/90 flex items-center justify-center p-4">
+      <form
+        onSubmit={submit}
+        className="w-full max-w-lg bg-slate-900 p-6 rounded-2xl space-y-4 overflow-auto max-h-[90vh]"
       >
-        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-          <div className="flex items-center space-x-2.5">
-            <div className="p-2 rounded-xl bg-teal-950 text-teal-400 border border-teal-800">
-              <PawPrint className="w-5 h-5" />
-            </div>
-            <div>
-              <h3 className="font-bold text-base text-white">Register Patient</h3>
-              <p className="text-xs text-slate-400">Electronic patient medical chart creation</p>
-            </div>
-          </div>
-          <button onClick={onClose} className="p-1 text-slate-400 hover:text-white rounded-lg">
-            <X className="w-5 h-5" />
+        <h2 className="text-xl font-bold">Register patient</h2>
+        <label className="block">
+          Patient name
+          <input
+            required
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            className={input}
+          />
+        </label>
+        <label className="block">
+          Species
+          <select
+            value={species}
+            onChange={(e) => setSpecies(e.target.value as Species)}
+            className={input}
+          >
+            {["dog", "cat", "bird", "rabbit", "reptile", "other"].map((s) => (
+              <option key={s}>{s}</option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          Sex
+          <select
+            value={sex}
+            onChange={(e) => setSex(e.target.value as Pet["sex"])}
+            className={input}
+          >
+            {[
+              "Male (Intact)",
+              "Male (Neutered)",
+              "Female (Intact)",
+              "Female (Spayed)",
+            ].map((s) => (
+              <option key={s}>{s}</option>
+            ))}
+          </select>
+        </label>
+        <label className="block">
+          Weight (kg)
+          <input
+            type="number"
+            min="0"
+            max="1500"
+            step="0.01"
+            required
+            value={weight}
+            onChange={(e) => setWeight(e.target.value)}
+            className={input}
+          />
+        </label>
+        <label className="block">
+          Owner
+          <select
+            value={ownerId}
+            onChange={(e) => setOwner(e.target.value)}
+            className={input}
+          >
+            <option value="">Register a new owner</option>
+            {petOwners.map((o) => (
+              <option key={o.id} value={o.id}>
+                {o.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        {!ownerId && (
+          <>
+            <label className="block">
+              Owner name
+              <input
+                required
+                value={ownerName}
+                onChange={(e) => setOwnerName(e.target.value)}
+                className={input}
+              />
+            </label>
+            <label className="block">
+              Owner email
+              <input
+                type="email"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className={input}
+              />
+            </label>
+          </>
+        )}
+        <label className="block">
+          Notes
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            className={input}
+          />
+        </label>
+        {error && (
+          <p role="alert" className="text-rose-300">
+            {error}
+          </p>
+        )}
+        <div className="flex gap-3">
+          <button
+            disabled={busy}
+            className="bg-teal-600 px-4 py-2 rounded-xl disabled:opacity-50"
+          >
+            {busy ? "Saving…" : "Save patient"}
+          </button>
+          <button type="button" disabled={busy} onClick={onClose}>
+            Cancel
           </button>
         </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4 text-xs">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-            <div>
-              <label className="block font-bold text-slate-300 mb-1">Pet Name *</label>
-              <input
-                type="text"
-                required
-                placeholder="e.g. Copper or Bella"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-teal-500"
-              />
-            </div>
-
-            <div>
-              <label className="block font-bold text-slate-300 mb-1">Species *</label>
-              <select
-                value={species}
-                onChange={(e) => setSpecies(e.target.value as Species)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-teal-500"
-              >
-                <option value="dog">Canine (Dog)</option>
-                <option value="cat">Feline (Cat)</option>
-                <option value="rabbit">Lagomorph (Rabbit)</option>
-                <option value="bird">Avian (Bird)</option>
-                <option value="other">Other Exotic</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block font-bold text-slate-300 mb-1">Breed</label>
-              <input
-                type="text"
-                placeholder="e.g. Beagle / Labrador"
-                value={breed}
-                onChange={(e) => setBreed(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-teal-500"
-              />
-            </div>
-
-            <div>
-              <label className="block font-bold text-slate-300 mb-1">Sex & Reproductive Status</label>
-              <select
-                value={sex}
-                onChange={(e) => setSex(e.target.value as any)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-teal-500"
-              >
-                <option value="Male (Neutered)">Male (Neutered)</option>
-                <option value="Male (Intact)">Male (Intact)</option>
-                <option value="Female (Spayed)">Female (Spayed)</option>
-                <option value="Female (Intact)">Female (Intact)</option>
-              </select>
-            </div>
-
-            <div>
-              <label className="block font-bold text-slate-300 mb-1">Weight (kg)</label>
-              <input
-                type="number"
-                step="0.1"
-                value={weightKg}
-                onChange={(e) => setWeightKg(parseFloat(e.target.value))}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-teal-500 font-mono"
-              />
-            </div>
-
-            <div>
-              <label className="block font-bold text-slate-300 mb-1">Microchip Number</label>
-              <input
-                type="text"
-                value={microchip}
-                onChange={(e) => setMicrochip(e.target.value)}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-teal-500 font-mono"
-              />
-            </div>
-          </div>
-
-          {!isPetOwner && (
-            <div>
-              <label className="block font-bold text-slate-300 mb-1">Pet Parent / Owner</label>
-              <select
-                value={ownerId}
-                onChange={(e) => {
-                  setOwnerId(e.target.value);
-                  const found = petOwners.find((o) => o.id === e.target.value);
-                  if (found) setOwnerName(found.name);
-                }}
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-teal-500"
-              >
-                {petOwners.map((owner) => (
-                  <option key={owner.id} value={owner.id}>
-                    {owner.name} ({owner.phone})
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          <div>
-            <label className="block font-bold text-slate-300 mb-1">Known Allergies (comma separated)</label>
-            <input
-              type="text"
-              placeholder="e.g. Beef protein, Penicillin"
-              value={allergiesText}
-              onChange={(e) => setAllergiesText(e.target.value)}
-              className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-teal-500"
-            />
-          </div>
-
-          <div className="pt-3 border-t border-slate-800 flex items-center justify-end space-x-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 rounded-xl bg-slate-800 text-slate-300 hover:bg-slate-700 font-semibold"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              className="px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-bold shadow-md"
-            >
-              Create Patient Profile
-            </button>
-          </div>
-        </form>
-      </div>
+      </form>
     </div>
   );
 };

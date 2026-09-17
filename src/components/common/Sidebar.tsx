@@ -23,6 +23,7 @@ export type NavSection =
   | "pets"
   | "records"
   | "appointments"
+  | "urgent"
   | "reminders"
   | "billing"
   | "staff"
@@ -50,6 +51,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   }
 
   const navItems: NavItem[] = [
+    {id:"urgent",label:"Urgent-care queue",icon:<Heart className="w-4 h-4"/>,allowedRoles:["CLINIC_ADMIN","VETERINARIAN","TECHNICIAN","RECEPTIONIST","PET_OWNER"]},
     {
       id: "dashboard",
       label: isPetOwner ? "My Pet Dashboard" : "Practice Dashboard",
@@ -109,7 +111,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       label: "Security & Audit Logs",
       icon: <ShieldCheck className="w-4 h-4" />,
       allowedRoles: ["SUPER_ADMIN", "CLINIC_ADMIN"],
-      badge: "HIPAA",
+
     },
   ];
 
