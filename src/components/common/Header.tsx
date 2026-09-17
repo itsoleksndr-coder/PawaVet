@@ -62,17 +62,7 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Right Controls: Role Badge, Fast Switcher, Lock, Profile */}
       <div className="flex items-center space-x-2 sm:space-x-3">
-        {/* Fast 1-Click Role Switcher Pill */}
-        <button
-          onClick={onOpenRoleSwitcher}
-          className="flex items-center space-x-1.5 px-3 py-1.5 rounded-xl bg-slate-800/80 hover:bg-slate-750 border border-slate-700/80 text-xs text-slate-200 transition-all cursor-pointer shadow-sm group"
-          title="Switch Active RBAC Role"
-        >
-          <Sparkles className="w-3.5 h-3.5 text-teal-400 group-hover:rotate-12 transition-transform" />
-          <span className="hidden md:inline font-medium">Role:</span>
-          <RoleBadge role={activeRole} size="sm" />
-          <ChevronDown className="w-3 h-3 text-slate-400" />
-        </button>
+        <RoleBadge role={activeRole} size="sm" />
 
         {/* Inactivity Screen Lock Button */}
         {currentUser && (

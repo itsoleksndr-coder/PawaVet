@@ -1,3 +1,4 @@
+import { EditPatient } from "./EditPatient";
 import React, { useState } from "react";
 import { useAuth } from "../../context/AuthContext";
 import { useData } from "../../context/DataContext";
@@ -31,12 +32,13 @@ export const PetDetailModal: React.FC<PetDetailModalProps> = ({
   onOpenCreateRecord,
   onSelectRecord,
 }) => {
-  const { isPetOwner, canCreateSoapRecord, currentUser } = useAuth();
-  const { medicalRecords, appointments, reminders } = useData();
+  const { isPetOwner, canCreateSoapRecord, currentUser, hasPermission } = useAuth();
+  const { medicalRecords, appointments, reminders, pets } = useData();
 
   const [activeTab, setActiveTab] = useState<"records" | "vitals" | "vaccines" | "reminders">("records");
 
   if (!pet) return null;
+  pet = pets.find(p => p.id === pet?.id) || pet;
 
   const petRecords = medicalRecords.filter((r) => r.petId === pet.id);
   const petApts = appointments.filter((a) => a.petId === pet.id);
@@ -143,6 +145,7 @@ export const PetDetailModal: React.FC<PetDetailModalProps> = ({
 
         {/* Body Content */}
         <div className="p-6 overflow-y-auto space-y-4">
+          {hasPermission("pets:update") && <EditPatient key={pet.id} pet={pet} onClose={onClose} />}
           {/* TAB 1: SOAP Medical Records */}
           {activeTab === "records" && (
             <div className="space-y-4">

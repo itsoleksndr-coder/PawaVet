@@ -181,7 +181,7 @@ export interface Pet {
   ownerId: string; // Pet owner isolation key
   ownerName: string;
   photoUrl?: string;
-  vaccinationStatus: "Up to date" | "Due soon" | "Overdue";
+  vaccinationStatus: "Up to date" | "Due soon" | "Overdue" | "Unknown";
   allergies: string[];
   currentMedications: string[];
   notes?: string;

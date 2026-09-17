@@ -70,17 +70,17 @@ export const StaffManagementView: React.FC = () => {
           </div>
           <h2 className="text-2xl font-extrabold text-white mt-1">Staff Roster & Role Permissions</h2>
           <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
-            Manage practice employees, assign granular role-based access control, and enforce 2FA compliance.
+            Manage clinic roles and suspend staff access. Two-factor setup is not yet available.
           </p>
         </div>
 
         {(isSuperAdmin || isClinicAdmin) && (
           <button
-            onClick={() => setIsInviteOpen(true)}
+            disabled title="Staff invitations are not activated yet"
             className="flex items-center justify-center space-x-2 px-5 py-2.5 rounded-2xl bg-purple-600 hover:bg-purple-500 text-white text-xs sm:text-sm font-bold shadow-md shadow-purple-600/30 transition-all cursor-pointer"
           >
             <UserPlus className="w-4 h-4" />
-            <span>Invite Team Member</span>
+            <span>Invitations unavailable</span>
           </button>
         )}
       </div>
