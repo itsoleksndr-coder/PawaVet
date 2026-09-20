@@ -64,7 +64,14 @@ export async function migrate() {
   const database = await db();
   await database.transaction(async (tx) => {
     await tx.query(
+      `CREATE TABLE IF NOT EXISTS stripe_events (id text PRIMARY KEY, received_at timestamptz NOT NULL DEFAULT now())`,
+    );
+
+    await tx.query(
       `CREATE TABLE IF NOT EXISTS clinics (id text PRIMARY KEY, profile jsonb NOT NULL, data jsonb NOT NULL)`,
+    );
+    await tx.query(
+      `CREATE TABLE IF NOT EXISTS clinic_billing (clinic_id text PRIMARY KEY REFERENCES clinics(id),customer_id text UNIQUE,subscription_id text UNIQUE,status text NOT NULL DEFAULT 'not_subscribed',paid_until timestamptz,cancel_at_period_end boolean NOT NULL DEFAULT false,checkout_id text,checkout_url text,checkout_expires bigint,attempt text NOT NULL)`,
     );
     await tx.query(
       `CREATE TABLE IF NOT EXISTS users (id text PRIMARY KEY, email text UNIQUE NOT NULL, password_hash text NOT NULL, clinic_id text NOT NULL REFERENCES clinics(id), profile jsonb NOT NULL)`,

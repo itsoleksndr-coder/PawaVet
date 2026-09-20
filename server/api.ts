@@ -17,9 +17,46 @@ import {
 } from "../src/types";
 import { type ClinicData } from "../src/clinic-model";
 
+import {
+  BillingError,
+  billingStatus,
+  checkout,
+  portal,
+  stripeClient,
+  reconcileEvent,
+  requireSubscription,
+} from "./billing";
+
 export const api = express();
 api.disable("x-powered-by");
 if (process.env.VERCEL) api.set("trust proxy", 1);
+api.post(
+  "/api/billing/webhook",
+  express.raw({ type: "application/json", limit: "128kb" }),
+  async (req, res) => {
+    try {
+      if (!process.env.STRIPE_WEBHOOK_SECRET)
+        return res.status(503).json({ error: "Webhook is not configured." });
+      const client = stripeClient();
+      let event;
+      try {
+        event = client.webhooks.constructEvent(
+          req.body,
+          req.get("stripe-signature") || "",
+          process.env.STRIPE_WEBHOOK_SECRET,
+        );
+      } catch {
+        return res.status(400).json({ error: "Invalid webhook signature." });
+      }
+      await reconcileEvent(event, client);
+      return res.json({ received: true });
+    } catch (error) {
+      return res
+        .status(error instanceof BillingError ? error.status : 503)
+        .json({ error: "Webhook could not be processed. Retry required." });
+    }
+  },
+);
 api.use(express.json({ limit: "128kb" }));
 class HttpError extends Error {
   constructor(
@@ -276,6 +313,7 @@ async function mutate(
       [user.clinicId],
     );
     const data = result.rows[0].data;
+    await requireSubscription(user.clinicId!, tx);
     const value = await fn(data, user, tx);
     data.auditLogs.unshift({
       id: randomUUID(),
@@ -619,10 +657,35 @@ api.post(
     });
   }),
 );
+
+api.get(
+  "/api/billing/status",
+  route(async (req, res) =>
+    res.json(await billingStatus((await actor(req)).profile)),
+  ),
+);
+api.post(
+  "/api/billing/checkout",
+  route(async (req, res) => {
+    const user = (await actor(req)).profile;
+    permit(user, "clinic:settings_write");
+    return res.json(await checkout(user));
+  }),
+);
+api.post(
+  "/api/billing/portal",
+  route(async (req, res) => {
+    const user = (await actor(req)).profile;
+    permit(user, "clinic:settings_write");
+    return res.json(await portal(user));
+  }),
+);
 api.use("/api", (_req, res) =>
   res.status(404).json({ error: "API endpoint not found." }),
 );
 api.use((error: unknown, _req: Request, res: Response, _next: NextFunction) => {
+  if (error instanceof BillingError)
+    return res.status(error.status).json({ error: error.message });
   if (error instanceof z.ZodError)
     return res.status(400).json({
       error: error.issues

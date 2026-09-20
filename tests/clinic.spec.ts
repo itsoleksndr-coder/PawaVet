@@ -34,6 +34,9 @@ async function start() {
     env: {
       ...process.env,
       DATABASE_URL: "",
+      STRIPE_SECRET_KEY: "",
+      STRIPE_BILLING_MODE: "test",
+      BILLING_ENFORCED: "false",
       NODE_ENV: "production",
       PORT: "4317",
       APP_URL: baseURL,
@@ -562,4 +565,33 @@ test("mobile layout and navigation have no page errors or horizontal overflow", 
     path: "test-results/mobile-clinic.png",
     fullPage: true,
   });
+});
+
+test("subscription return cannot grant access and missing provider disables checkout", async ({
+  page,
+}) => {
+  test.skip(remote, "Isolated local billing configuration only");
+  const api = await client();
+  await page.context().addCookies((await api.storageState()).cookies);
+  await page.goto("/?billing=success");
+  await expect(
+    page.getByRole("heading", { name: "Clinic subscription" }),
+  ).toBeVisible();
+  await expect(page.getByText("Status: not subscribed")).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Open test checkout" }),
+  ).toBeDisabled();
+  expect((await api.post("/api/billing/checkout", { data: {} })).status()).toBe(
+    503,
+  );
+  expect((await api.post("/api/billing/webhook", { data: {} })).status()).toBe(
+    503,
+  );
+  const anonymous = await requests.newContext({
+    baseURL,
+    extraHTTPHeaders: headers,
+  });
+  expect((await anonymous.get("/api/billing/status")).status()).toBe(401);
+  await anonymous.dispose();
+  await api.dispose();
 });

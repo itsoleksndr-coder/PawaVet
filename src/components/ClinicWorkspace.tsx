@@ -1,4 +1,5 @@
 import React, { useState, useId } from "react";
+import { SubscriptionPanel } from "./SubscriptionPanel";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 const field =
@@ -49,7 +50,12 @@ export function ClinicWorkspace() {
     refresh,
     mutate,
   } = useData();
-  const [tab, setTab] = useState("Today");
+  const [tab, setTab] = useState(() =>
+    new URLSearchParams(window.location.search).has("billing") &&
+    hasPermission("staff:invite")
+      ? "Subscription"
+      : "Today",
+  );
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
   const [failure, setFailure] = useState("");
@@ -105,7 +111,7 @@ export function ClinicWorkspace() {
         "Appointments",
         "Records",
         "Urgent care",
-        ...(hasPermission("staff:invite") ? ["Staff"] : []),
+        ...(hasPermission("staff:invite") ? ["Staff", "Subscription"] : []),
         "Account",
       ];
   if (loading) return <p className="p-8 text-white">Loading clinic records…</p>;
@@ -171,6 +177,7 @@ export function ClinicWorkspace() {
             {message}
           </p>
         )}
+        {tab === "Subscription" && <SubscriptionPanel />}
         {tab === "Today" && (
           <>
             <h2 className="text-2xl font-bold">Clinic overview</h2>
