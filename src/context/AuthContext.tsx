@@ -80,7 +80,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // Start with Clinic Admin Helena Cross by default for immediate rich review, or restore from storage
   const [users, setUsers] = useState<User[]>(INITIAL_USERS);
   const [clinics, setClinics] = useState<Clinic[]>(INITIAL_CLINICS);
-  const [currentUser, setCurrentUser] = useState<User | null>(INITIAL_USERS[1]); // Dr. Helena Cross (CLINIC_ADMIN)
+  const [currentUser, setCurrentUser] = useState<User | null>(null); // Dr. Helena Cross (CLINIC_ADMIN)
   const [activeClinicId, setActiveClinicId] = useState<string>("clinic-1");
   const [isLocked, setIsLocked] = useState<boolean>(false);
   const [sessions, setSessions] = useState<UserSession[]>(INITIAL_SESSIONS);

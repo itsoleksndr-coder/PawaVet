@@ -20,7 +20,7 @@ export const RemindersView: React.FC = () => {
   const [sentReminders, setSentReminders] = useState<Record<string, boolean>>({});
 
   const handleSendReminder = (id: string) => {
-    setSentReminders((prev) => ({ ...prev, [id]: true }));
+    // Delivery is unavailable; never mark an unsent message as sent.
   };
 
   return (
@@ -37,7 +37,7 @@ export const RemindersView: React.FC = () => {
           </div>
           <h2 className="text-2xl font-extrabold text-white mt-1">Vaccine & Health Reminder Engine</h2>
           <p className="text-xs sm:text-sm text-slate-400 mt-0.5">
-            Automated multi-channel notifications for core vaccinations, parasitic control, and annual exams.
+            Sample reminder schedule. Delivery is not connected; no messages will be sent.
           </p>
         </div>
       </div>
@@ -81,7 +81,7 @@ export const RemindersView: React.FC = () => {
               {!isPetOwner ? (
                 <button
                   onClick={() => handleSendReminder(rem.id)}
-                  disabled={isSent}
+                  disabled={true}
                   className={`w-full py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center space-x-2 ${
                     isSent
                       ? "bg-emerald-950 text-emerald-400 border border-emerald-800"
@@ -91,12 +91,12 @@ export const RemindersView: React.FC = () => {
                   {isSent ? (
                     <>
                       <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>Sent to Pet Parent</span>
+                      <span>Sample reminder</span>
                     </>
                   ) : (
                     <>
                       <Send className="w-3.5 h-3.5" />
-                      <span>Dispatch Recall Alert</span>
+                      <span>Delivery not connected</span>
                     </>
                   )}
                 </button>

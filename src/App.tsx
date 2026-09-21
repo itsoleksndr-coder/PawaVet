@@ -29,7 +29,7 @@ import { RemindersView } from "./components/reminders/RemindersView";
 import { Pet, MedicalRecord } from "./types";
 
 const MainAppContent: React.FC = () => {
-  const { activeRole, isPetOwner } = useAuth();
+  const { activeRole, isPetOwner, isLoggedIn, switchDemoRole } = useAuth();
 
   // Navigation State
   const [activeSection, setActiveSection] = useState<NavSection>("dashboard");
@@ -48,8 +48,25 @@ const MainAppContent: React.FC = () => {
   const [isCreateAptOpen, setIsCreateAptOpen] = useState(false);
   const [isCreateInvoiceOpen, setIsCreateInvoiceOpen] = useState(false);
 
+  if (!isLoggedIn) return (
+    <main className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-6">
+      <section className="max-w-xl space-y-6 rounded-3xl border border-slate-800 bg-slate-900 p-8">
+        <p className="text-teal-400 font-semibold">PawaVet · Clinic preview</p>
+        <h1 className="text-3xl font-bold">Explore your clinic workflow</h1>
+        <p>This preview uses sample patients. Accounts, saved clinic records, payments, reminders, and live AI are not connected yet.</p>
+        <p className="text-amber-300">Use fictional information only. Changes reset when you reload.</p>
+        <button className="rounded-xl bg-teal-600 px-5 py-3 font-bold" onClick={() => switchDemoRole("CLINIC_ADMIN")}>
+          Explore sample clinic
+        </button>
+      </section>
+    </main>
+  );
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-teal-500/30 selection:text-teal-200">
+      <div role="status" className="bg-amber-950 text-amber-200 px-4 py-3 text-sm text-center">
+        Sample clinic · No real authentication, saved records, payments, messages, or live AI. Use fictional information only.
+      </div>
       {/* Top Header */}
       <Header
         onOpenRoleSwitcher={() => setIsRoleSwitcherOpen(true)}
