@@ -87,6 +87,7 @@ export interface User {
   name: string;
   role: UserRole;
   clinicId?: string; // empty for SUPER_ADMIN or PET_OWNER with multi-clinic relations
+  ownerId?: string;
   associatedClinicIds?: string[]; // for pet owners or multi-clinic staff
   avatarUrl?: string;
   title?: string;
@@ -145,7 +146,9 @@ export type AuditActionType =
   | "APPOINTMENT_CANCELLED"
   | "INVOICE_GENERATED"
   | "INVOICE_PAID"
-  | "REMINDER_DISPATCHED";
+  | "REMINDER_DISPATCHED"
+  | "URGENT_INTAKE_CREATED"
+  | "URGENT_INTAKE_REVIEWED";
 
 export interface AuditLogEntry {
   id: string;
@@ -174,14 +177,14 @@ export interface Pet {
   breed: string;
   age: string;
   dateOfBirth: string;
-  sex: "Male (Intact)" | "Male (Neutered)" | "Female (Intact)" | "Female (Spayed)";
-  weightKg: number;
+  sex: "Unknown" | "Male (Intact)" | "Male (Neutered)" | "Female (Intact)" | "Female (Spayed)";
+  weightKg: number | null;
   color: string;
   microchipNumber: string;
   ownerId: string; // Pet owner isolation key
   ownerName: string;
   photoUrl?: string;
-  vaccinationStatus: "Up to date" | "Due soon" | "Overdue";
+  vaccinationStatus: "Unknown" | "Up to date" | "Due soon" | "Overdue";
   allergies: string[];
   currentMedications: string[];
   notes?: string;
@@ -234,6 +237,7 @@ export interface Vitals {
 }
 
 export interface MedicalRecord {
+  appointmentId?: string;
   id: string;
   clinicId: string; // Tenant isolation key
   petId: string;

@@ -10,12 +10,12 @@ export const LockScreenModal: React.FC = () => {
 
   if (!isLocked || !currentUser) return null;
 
-  const handleUnlock = (e: React.FormEvent) => {
+  const handleUnlock = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    const success = unlockSession(pin);
+    const success = await unlockSession(pin);
     if (!success) {
-      setError("Please enter at least 4 characters or your PIN to unlock.");
+      setError("Password verification failed.");
     } else {
       setPin("");
     }
@@ -51,9 +51,9 @@ export const LockScreenModal: React.FC = () => {
 
         {/* Lock message */}
         <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 text-xs text-slate-400">
-          <p className="font-semibold text-slate-200">Terminal Locked for Veterinary Compliance</p>
+          <p className="font-semibold text-slate-200">Session locked</p>
           <p className="text-[11px] text-slate-400 mt-0.5">
-            Patient health data and DEA controlled prescription charting are protected. Enter your password or PIN to resume.
+            Enter your account password to resume.
           </p>
         </div>
 
@@ -65,7 +65,7 @@ export const LockScreenModal: React.FC = () => {
               type="password"
               autoFocus
               required
-              placeholder="Enter PIN or Password (e.g. 1234)"
+              placeholder="Enter your password"
               value={pin}
               onChange={(e) => setPin(e.target.value)}
               className="w-full bg-slate-950 border border-slate-700 rounded-2xl pl-10 pr-4 py-3 text-center text-sm font-mono text-white focus:outline-none focus:border-teal-500 shadow-inner"
