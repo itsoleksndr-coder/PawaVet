@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "node --import tsx server.ts",
-    "build": "npm run lint && vite build && esbuild server.ts --bundle --platform=node --format=esm --packages=external --outfile=build/server.js",
+    "build": "npm run lint && vite build && esbuild server.ts --bundle --platform=node --format=esm --packages=external --outfile=build/server.js && esbuild server/api.ts --bundle --platform=node --format=esm --packages=external --outfile=build/api.js",
     "start": "node build/server.js",
     "preview": "vite preview",
     "clean": "rm -rf dist server.cjs",
@@ -13,8 +13,9 @@
     "db:migrate": "node --import tsx scripts/migrate.ts",
     "db:provision": "node --import tsx scripts/provision.ts",
     "test:e2e": "playwright test",
-    "verify": "npm run build && npm run test:billing && npm run test:e2e",
-    "test:billing": "node --import tsx --test tests/billing.test.ts"
+    "verify": "npm run build && npm run test:serverless && npm run test:billing && npm run test:e2e",
+    "test:billing": "node --import tsx --test tests/billing.test.ts",
+    "test:serverless": "node --test tests/serverless.test.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.8",
