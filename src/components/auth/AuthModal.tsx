@@ -12,9 +12,15 @@ export function AuthModal({
   defaultTab?: string;
 }) {
   const { login } = useAuth();
-  const [resetToken] = useState(
-    () => new URLSearchParams(window.location.search).get("reset") || "",
-  );
+  const [resetToken] = useState(() => {
+    const token =
+      new URLSearchParams(window.location.hash.slice(1)).get("reset") ||
+      new URLSearchParams(window.location.search).get("reset") ||
+      "";
+    // Erase sensitive tokens from browser history as soon as the page starts.
+    if (token) window.history.replaceState({}, "", window.location.pathname);
+    return token;
+  });
   const [view, setView] = useState<View>(resetToken ? "reset" : "login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
