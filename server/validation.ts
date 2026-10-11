@@ -115,3 +115,11 @@ export const passwordInput = z.object({
   oldPassword: z.string().min(1).max(256),
   newPassword: z.string().min(12).max(256),
 });
+
+export const recoveryRequestInput = z.object({
+  email: z.email().max(254).transform((s) => s.toLowerCase()),
+});
+export const recoveryConfirmInput = z.object({
+  token: z.string().regex(/^[a-f0-9]{64}$/, "Invalid reset link."),
+  newPassword: z.string().min(12).max(256),
+});
