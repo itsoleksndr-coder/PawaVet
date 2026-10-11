@@ -300,8 +300,9 @@ api.post(
     // Only the mailbox owner receives the one-time token. Never return or log it.
     const url = new URL(appOrigin);
     url.pathname = "/";
-    url.search = new URLSearchParams({ reset: raw }).toString();
-    url.hash = "";
+    url.search = "";
+    // URL fragments are not sent to the server or included in HTTP request URLs.
+    url.hash = new URLSearchParams({ reset: raw }).toString();
     try {
       const sent = await fetch("https://api.resend.com/emails", {
         method: "POST",
