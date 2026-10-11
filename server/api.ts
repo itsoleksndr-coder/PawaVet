@@ -263,6 +263,95 @@ api.post(
     return res.json({ ok: true });
   }),
 );
+
+const recoveryResponse = { ok: true, message: "If this account exists, a password reset link will be emailed." };
+api.post(
+  "/api/auth/recovery/request",
+  route(async (req, res) => {
+    const { email } = input.recoveryRequestInput.parse(req.body);
+    const database = await db();
+    // Throttle known and unknown accounts identically, across serverless instances.
+    for (const key of [
+      "recovery:email:" + email,
+      "recovery:ip:" + (req.ip || req.socket.remoteAddress || "unknown"),
+    ]) {
+      const attempts = await database.query<{ attempts: number }>(
+        `INSERT INTO login_limits(key,attempts,reset_at) VALUES($1,1,now()+interval '1 hour') ON CONFLICT(key) DO UPDATE SET attempts=CASE WHEN login_limits.reset_at<now() THEN 1 ELSE login_limits.attempts+1 END, reset_at=CASE WHEN login_limits.reset_at<now() THEN now()+interval '1 hour' ELSE login_limits.reset_at END RETURNING attempts`,
+        [digest(key)],
+      );
+      if (attempts.rows[0].attempts > (key.startsWith("recovery:email:") ? 5 : 30))
+        throw new HttpError(429, "Too many reset requests. Try again later.");
+    }
+    const secret = process.env.RESEND_API_KEY;
+    const sender = process.env.PASSWORD_RESET_FROM;
+    const appOrigin = process.env.APP_URL;
+    if (!secret || !sender || !appOrigin || (process.env.VERCEL && !appOrigin.startsWith("https://")))
+      throw new HttpError(503, "Password recovery email is not configured.");
+    const user = await database.query<{ id: string }>(
+      "SELECT id FROM users WHERE email=$1 AND profile->>'status'='Active'",
+      [email],
+    );
+    if (!user.rows[0]) return res.json(recoveryResponse);
+    const raw = randomBytes(32).toString("hex");
+    await database.query(
+      `INSERT INTO password_resets(user_id,token_hash,expires_at) VALUES($1,$2,now()+interval '30 minutes') ON CONFLICT(user_id) DO UPDATE SET token_hash=EXCLUDED.token_hash,expires_at=EXCLUDED.expires_at,created_at=now()`,
+      [user.rows[0].id, digest(raw)],
+    );
+    // Only the mailbox owner receives the one-time token. Never return or log it.
+    const url = new URL(appOrigin);
+    url.pathname = "/";
+    url.search = "";
+    // URL fragments are not sent to the server or included in HTTP request URLs.
+    url.hash = new URLSearchParams({ reset: raw }).toString();
+    try {
+      const sent = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: "Bearer " + secret,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from: sender,
+          to: [email],
+          subject: "Reset your PawaVet password",
+          text: "A password reset was requested. This link expires in 30 minutes: " + url.toString() + "\\nIf you did not request it, ignore this email.",
+        }),
+        signal: AbortSignal.timeout(10000),
+      });
+      if (!sent.ok) throw new Error("Delivery rejected");
+    } catch {
+      // Revoke the undelivered token, without erasing a newer request's token.
+      await database.query(
+        "DELETE FROM password_resets WHERE user_id=$1 AND token_hash=$2",
+        [user.rows[0].id, digest(raw)],
+      );
+      throw new HttpError(503, "Password recovery email could not be sent. Try again later.");
+    }
+    return res.json(recoveryResponse);
+  }),
+);
+api.post(
+  "/api/auth/recovery/confirm",
+  route(async (req, res) => {
+    const { token: resetToken, newPassword } = input.recoveryConfirmInput.parse(req.body);
+    const database = await db();
+    const nextHash = await hashPassword(newPassword);
+    await database.transaction(async (tx) => {
+      const result = await tx.query<{ user_id: string }>(
+        "SELECT user_id FROM password_resets WHERE token_hash=$1 AND expires_at > now() FOR UPDATE",
+        [digest(resetToken)],
+      );
+      const userId = result.rows[0]?.user_id;
+      if (!userId) throw new HttpError(400, "Invalid or expired reset link.");
+      await tx.query("UPDATE users SET password_hash=$1 WHERE id=$2", [nextHash, userId]);
+      await tx.query("DELETE FROM sessions WHERE user_id=$1", [userId]);
+      await tx.query("DELETE FROM password_resets WHERE user_id=$1", [userId]);
+    });
+    res.clearCookie(cookieName, cookieOptions);
+    return res.json({ ok: true });
+  }),
+);
+
 api.get(
   "/api/clinic",
   route(async (req, res) => {

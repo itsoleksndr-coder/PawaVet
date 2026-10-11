@@ -83,6 +83,9 @@ export async function migrate() {
       `CREATE TABLE IF NOT EXISTS login_limits (key text PRIMARY KEY, attempts integer NOT NULL, reset_at timestamptz NOT NULL)`,
     );
     await tx.query(
+      `CREATE TABLE IF NOT EXISTS password_resets (user_id text PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, token_hash text UNIQUE NOT NULL, expires_at timestamptz NOT NULL, created_at timestamptz NOT NULL DEFAULT now())`,
+    );
+    await tx.query(
       `CREATE INDEX IF NOT EXISTS sessions_user_id ON sessions(user_id)`,
     );
   });
