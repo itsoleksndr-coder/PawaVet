@@ -104,6 +104,7 @@ export const loginInput = z.object({
     .transform((s) => s.toLowerCase()),
   password: z.string().min(1).max(256),
   totpCode: z.string().trim().min(6).max(40).optional(),
+  rememberMe: z.boolean().optional().default(false),
 });
 export const staffInput = z.object({
   name: required,
