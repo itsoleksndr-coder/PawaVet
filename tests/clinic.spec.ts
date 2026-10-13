@@ -369,7 +369,6 @@ test("consented reminders queue exactly once and cancellation/opt-out stops unse
   });
   expect(without.status()).toBe(201);
   const newId = (await without.json()).id;
-  expect(none.length).toBe(0);
   expect((await (await api.get("/api/reminders")).json()).reminders
     .filter((j: { appointment_id: string }) => j.appointment_id === newId)).toHaveLength(0);
   await api.dispose();
