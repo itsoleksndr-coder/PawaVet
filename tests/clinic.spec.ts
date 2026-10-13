@@ -248,6 +248,8 @@ test("patient → visit → clinical record persists across reload and a second 
   await owner.getByLabel("Owner name").fill("Synthetic Owner " + Date.now());
   await owner.getByLabel("Owner email").fill("owner@example.test");
   await owner.getByLabel("Phone").fill("787-555-0100");
+  await owner.getByLabel("Owner consented to email reminders").check();
+  await owner.getByLabel("Owner consented to SMS reminders").check();
   await owner.getByRole("button", { name: "Save owner" }).click();
   await expect(page.getByRole("status")).toContainText("Saved");
   const pet = page.getByRole("form", { name: "Register patient" });
@@ -330,6 +332,76 @@ test("patient → visit → clinical record persists across reload and a second 
   );
   await api.dispose();
   expect(errors).toEqual([]);
+});
+
+test("consented reminders queue exactly once and cancellation/opt-out stops unsent messages", async () => {
+  test.skip(remote, "Local isolated queue verification.");
+  const api = await client();
+  const future = {
+    petId: savedPet,
+    veterinarianId: accounts[0].id,
+    date: "2030-07-12",
+    time: "09:00 AM",
+    durationMinutes: 30,
+    reason: "Reminder test",
+    type: "Wellness Exam",
+  };
+  const booked = await api.post("/api/appointments", { data: future });
+  expect(booked.status()).toBe(201);
+  const appointment = await booked.json();
+  const jobs = await api.get("/api/reminders");
+  expect(jobs.status()).toBe(200);
+  const myJobs = (await jobs.json()).reminders.filter((j: { appointment_id: string }) => j.appointment_id === appointment.id);
+  expect(myJobs.map((j: { channel: string }) => j.channel).sort()).toEqual(["email", "sms"]);
+  expect(myJobs.every((j: { status: string }) => j.status === "pending")).toBe(true);
+  expect(new Date(myJobs[0].due_at).toISOString()).toBe("2030-07-11T13:00:00.000Z");
+  const cancelled = await api.patch("/api/appointments/" + appointment.id, { data: { status: "Cancelled" } });
+  expect(cancelled.status()).toBe(200);
+  const gone = (await (await api.get("/api/reminders")).json()).reminders
+    .filter((j: { appointment_id: string }) => j.appointment_id === appointment.id);
+  expect(gone.every((j: { status: string }) => j.status === "cancelled")).toBe(true);
+  const optOut = await api.patch("/api/owners/" + ownerId + "/reminder-preferences", {
+    data: { emailReminderConsent: false, smsReminderConsent: false },
+  });
+  expect(optOut.status()).toBe(200);
+  const without = await api.post("/api/appointments", {
+    data: { ...future, date: "2030-07-13" },
+  });
+  expect(without.status()).toBe(201);
+  const newId = (await without.json()).id;
+  expect(none.length).toBe(0);
+  expect((await (await api.get("/api/reminders")).json()).reminders
+    .filter((j: { appointment_id: string }) => j.appointment_id === newId)).toHaveLength(0);
+  await api.dispose();
+});
+
+test("remember me creates a revocable 30-day cookie only after MFA; AI requires provider", async () => {
+  test.skip(remote, "Local server with known synthetic configuration only.");
+  const api = await requests.newContext({ baseURL, extraHTTPHeaders: headers });
+  const challenge = await api.post("/api/auth/login", {
+    data: { email: accounts[0].email, password: accounts[0].password, rememberMe: true },
+  });
+  expect(challenge.status()).toBe(200);
+  expect((await challenge.json()).requires2FA).toBe(true);
+  expect((await api.get("/api/clinic")).status()).toBe(401);
+  const verified = await api.post("/api/auth/login", {
+    data: { email: accounts[0].email, password: accounts[0].password, rememberMe: true, totpCode: totpCode(secrets.get(accounts[0].email)!) },
+  });
+  expect(verified.status()).toBe(200);
+  expect(verified.headers()["set-cookie"]).toContain("Max-Age=2592000");
+  const unavailable = await api.post("/api/support/chat", {
+    data: { agent: "appointments", message: "Can I change an appointment?", history: [] },
+  });
+  expect(unavailable.status()).toBe(503);
+  expect((await unavailable.json()).error).toContain("IA");
+  const unauth = await requests.newContext({ baseURL, extraHTTPHeaders: headers });
+  expect((await unauth.post("/api/support/chat", {
+    data: { agent: "billing", message: "Need help" },
+  })).status()).toBe(401);
+  await unauth.dispose();
+  expect((await api.post("/api/auth/logout", { data: {} })).status()).toBe(200);
+  expect((await api.get("/api/clinic")).status()).toBe(401);
+  await api.dispose();
 });
 
 test("invalid input, overlap, cross-clinic access, role restrictions and failed-save UI", async ({
