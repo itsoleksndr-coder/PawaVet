@@ -44,7 +44,10 @@ export async function queueAppointmentReminders(
     await tx.query(
       `INSERT INTO reminder_jobs(id,clinic_id,appointment_id,channel,recipient,due_at,status)
        VALUES($1,$2,$3,$4,$5,$6,'pending')
-       ON CONFLICT(appointment_id,channel) DO NOTHING`,
+       ON CONFLICT(appointment_id,channel) DO UPDATE
+       SET recipient=EXCLUDED.recipient, due_at=EXCLUDED.due_at, status='pending',
+           claimed_at=NULL, error_code=NULL
+       WHERE reminder_jobs.status='cancelled'`,
       [randomUUID(), appointment.clinicId, appointment.id, channel, recipient, due],
     );
   }
