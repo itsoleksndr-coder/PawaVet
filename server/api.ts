@@ -8,6 +8,7 @@ import { z } from "zod";
 import { db, type Sql } from "./db";
 import { digest, hashPassword, verifyPassword } from "./security";
 import { newTotpSecret, encryptTotp, decryptTotp, verifyTotp, recoveryCodes } from "./mfa";
+import { queueAppointmentReminders, cancelAppointmentReminders, updateOwnerReminders } from "./reminders";
 import * as input from "./validation";
 import {
   ROLE_PERMISSIONS,
@@ -421,6 +422,36 @@ api.post(
     ),
   ),
 );
+api.patch(
+  "/api/owners/:id/reminder-preferences",
+  route(async (req, res) =>
+    res.json(
+      await mutate(req, "REMINDER_CONSENT_UPDATED", async (data, user, tx) => {
+        const owner = data.petOwners.find(o => o.id === req.params.id);
+        if (!owner) throw new HttpError(404, "Owner not found.");
+        if (user.role === "PET_OWNER" && user.ownerId !== owner.id)
+          throw new HttpError(403, "Not your reminder preferences.");
+        const consent = input.reminderConsentInput.parse(req.body);
+        owner.emailReminderConsent = consent.emailReminderConsent;
+        owner.smsReminderConsent = consent.smsReminderConsent;
+        await updateOwnerReminders(tx, data, owner);
+        return { ownerId: owner.id, ...consent };
+      }),
+    ),
+  ),
+);
+api.get(
+  "/api/reminders",
+  route(async (req, res) => {
+    staffOnly((await actor(req)).profile);
+    const user = (await actor(req)).profile;
+    const records = await (await db()).query(
+      "SELECT id,appointment_id,channel,due_at,status,sent_at,error_code FROM reminder_jobs WHERE clinic_id=$1 ORDER BY due_at DESC LIMIT 100",
+      [user.clinicId],
+    );
+    return res.json({ reminders: records.rows });
+  }),
+);
 api.post(
   "/api/pets",
   route(async (req, res) =>
@@ -528,6 +559,7 @@ api.post(
           status: "Scheduled" as const,
         };
         data.appointments.push(apt);
+        await queueAppointmentReminders(tx, apt, owner);
         return apt;
       }),
     ),
@@ -546,7 +578,7 @@ api.patch(
   "/api/appointments/:id",
   route(async (req, res) =>
     res.json(
-      await mutate(req, "APPOINTMENT_STATUS_CHANGED", (data, user) => {
+      await mutate(req, "APPOINTMENT_STATUS_CHANGED", async (data, user, tx) => {
         const { status } = input.statusInput.parse(req.body);
         permit(
           user,
@@ -563,6 +595,8 @@ api.patch(
         if (status !== apt.status && !transitions[apt.status].includes(status))
           throw new HttpError(409, "Invalid appointment status transition.");
         apt.status = status;
+        if (status === "Cancelled" || status === "No-show")
+          await cancelAppointmentReminders(tx, apt.id);
         return apt;
       }),
     ),
