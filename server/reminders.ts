@@ -4,7 +4,7 @@ import type { Appointment, PetOwner, Clinic } from "../src/types";
 import type { ClinicData } from "../src/clinic-model";
 
 type Channel = "email" | "sms";
-export interface ReminderJob {
+export interface ReminderJob extends Record<string, unknown> {
   id: string;
   clinic_id: string;
   appointment_id: string;
