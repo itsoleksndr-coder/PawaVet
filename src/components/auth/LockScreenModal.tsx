@@ -6,6 +6,7 @@ import { Lock, Unlock, ShieldAlert, KeyRound, Building2 } from "lucide-react";
 export const LockScreenModal: React.FC = () => {
   const { isLocked, currentUser, activeClinic, unlockSession, logout } = useAuth();
   const [pin, setPin] = useState("");
+  const [code, setCode] = useState("");
   const [error, setError] = useState("");
 
   if (!isLocked || !currentUser) return null;
@@ -13,11 +14,12 @@ export const LockScreenModal: React.FC = () => {
   const handleUnlock = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    const success = await unlockSession(pin);
+    const success = await unlockSession(pin, code);
     if (!success) {
-      setError("Password verification failed.");
+      setError("Password or authenticator code is incorrect.");
     } else {
       setPin("");
+      setCode("");
     }
   };
 
@@ -53,7 +55,7 @@ export const LockScreenModal: React.FC = () => {
         <div className="p-3.5 rounded-2xl bg-slate-950/80 border border-slate-800 text-xs text-slate-400">
           <p className="font-semibold text-slate-200">Session locked</p>
           <p className="text-[11px] text-slate-400 mt-0.5">
-            Enter your account password to resume.
+            Enter your password and authenticator code to resume.
           </p>
         </div>
 
@@ -72,6 +74,7 @@ export const LockScreenModal: React.FC = () => {
             />
           </div>
 
+          <input type="text" autoComplete="one-time-code" required placeholder="Authenticator or recovery code" aria-label="Verification code" value={code} onChange={(e) => setCode(e.target.value)} className="w-full bg-slate-950 border border-slate-700 rounded-2xl px-4 py-3 text-center text-sm text-white" />
           {error && <p className="text-xs text-rose-400 font-medium">{error}</p>}
 
           <button
