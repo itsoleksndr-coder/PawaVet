@@ -46,7 +46,7 @@ As of September 20, 2026, the connected Vercel account returned 403 for the exis
 
 ## Boundaries
 
-This is an assisted-onboarding clinic pilot with subscription integration awaiting hosted verification. Email/SMS reminders, patient payment collection, telemedicine, AI generation, 2FA, self-service recovery, staff suspension/role editing, record amendments and automated backups are not available through this workspace. Unsupported operations do not report fake delivery/payment/AI success. The AI endpoint returns an explicit unavailable error. Owner views do not expose internal clinical records; a reviewed owner-facing summary/export remains future work. Urgent intake tracks review and priority but does not automatically create an encounter. Register a patient before intake.
+This is an assisted-onboarding clinic pilot with subscription integration awaiting hosted verification. Email/SMS reminders, patient payment collection, telemedicine, AI generation, self-service password recovery, staff suspension/role editing, record amendments and automated backups are not available through this workspace. Unsupported operations do not report fake delivery/payment/AI success. The AI endpoint returns an explicit unavailable error. Owner views do not expose internal clinical records; a reviewed owner-facing summary/export remains future work. Urgent intake tracks review and priority but does not automatically create an encounter. Register a patient before intake.
 
 Storage uses one transactional JSONB document per clinic for the pilot data, with SQL row locking for atomic updates/conflict checks. Users and hashed sessions have separate tables. This preserves isolation and avoids lost updates at pilot scale; normalized tables/pagination will be needed before larger datasets. Session cookies are HttpOnly, SameSite Strict, Secure on HTTPS/Vercel, expire in eight hours, and are backed by revocable server tokens. Passwords use salted scrypt. API authorization is server-enforced from session membership, never client-provided clinic/role IDs.
 
@@ -65,3 +65,16 @@ Setup is assisted, not public self-service signup. Provision the clinic administ
 5. Before live use, connect the correct live Stripe account, publish actual terms/privacy and billing support, and review tax obligations/registrations and price tax treatment. This implementation does not enable Stripe Tax automatically. Set `TERMS_URL`, `PRIVACY_URL`, `SUPPORT_EMAIL`, HTTPS `APP_URL`, and the live price/key/webhook secret. Set `BILLING_TAX_REVIEWED=true` and `BILLING_LAUNCH_APPROVED=true` only after completing those reviews and hosted verification. Both flags and enforcement are required for live checkout.
 
 `npm run test:billing` covers server price validation, concurrent checkout attempts, signature tampering, entitlement enforcement, portal customer isolation and stale/duplicate webhook handling against an isolated local SQL database. `npm run verify` includes it plus the browser bot. The connected Stripe account was test-only at verification time; no live product, charge or subscription has been created by this work.
+
+
+## Required two-factor authentication (pending staging verification)
+
+All staff, administrators and pet-owner accounts must enter a password AND an authenticator app code for every login. The first password check starts required TOTP setup, provides an authenticator key for manual entry and ten one-time recovery codes. No session is issued until an app code verifies the account. Existing sessions are invalidated by the `mfa_verified` session column, which defaults to false. Subsequent logins accept a six-digit app code or one saved recovery code. Recovery codes are stored as hashes and consumed atomically.
+
+Before activating this change in Railway:
+1. Generate a secure random 32-byte key and configure its base64 encoding as `MFA_ENCRYPTION_KEY` in the production service secret variables. Preserve the key outside the service securely: losing/rotating it without a migration will lock out accounts with enrolled MFA.
+2. Run the database migration and verify account enrollment, logout, clinic isolation and owner access in a staging database. Existing sessions will be rejected after this deployment.
+3. Establish a manual identity-verified procedure for users who lose both an authenticator and recovery codes. This change deliberately provides no email or administrator bypass.
+4. Clear dependency security issues and run the browser/API verification suite. Neither deployment nor hosted verification is asserted by this branch.
+
+The UI supports manual authenticator key entry; a QR code is not yet implemented. Self-service password recovery and outbound SMS/email are separate future functions.
