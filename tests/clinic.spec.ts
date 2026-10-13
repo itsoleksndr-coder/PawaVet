@@ -8,6 +8,7 @@ import {
 import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
+import { totpCode } from "../server/mfa";
 import type { ClinicSnapshot } from "../src/clinic-model";
 let service: ChildProcess;
 let database = "";
@@ -29,6 +30,22 @@ const headers = {
   "Content-Type": "application/json",
 };
 let serverOutput = "";
+const secrets = new Map<string, string>();
+const mfaKey = Buffer.alloc(32, 7).toString("base64");
+async function apiLogin(api: APIRequestContext, email: string, password: string) {
+  const first = await api.post("/api/auth/login", { data: { email, password } });
+  expect(first.status()).toBe(200);
+  const challenge = await first.json();
+  expect(challenge.requires2FA).toBe(true);
+  if (challenge.enrollmentSecret) secrets.set(email, challenge.enrollmentSecret);
+  const secret = secrets.get(email) || process.env.E2E_TOTP_SECRET;
+  if (!secret) throw new Error("Set E2E_TOTP_SECRET for an enrolled remote account.");
+  const confirmed = await api.post("/api/auth/login", {
+    data: { email, password, totpCode: totpCode(secret) },
+  });
+  expect(confirmed.status()).toBe(200);
+  return confirmed;
+}
 async function start() {
   service = spawn(process.execPath, ["build/server.js"], {
     env: {
@@ -41,6 +58,7 @@ async function start() {
       PORT: "4317",
       APP_URL: baseURL,
       LOCAL_DATABASE_PATH: database,
+      MFA_ENCRYPTION_KEY: mfaKey,
     },
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -82,22 +100,20 @@ async function login(
   await page.getByLabel("Email", { exact: true }).fill(email);
   await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.getByLabel("Verification code")).toBeVisible();
+  const setup = page.getByTestId("mfa-secret");
+  if (await setup.count()) secrets.set(email, (await setup.textContent())!.trim());
+  const secret = secrets.get(email) || process.env.E2E_TOTP_SECRET;
+  if (!secret) throw new Error("Missing authenticator secret for synthetic account.");
+  await page.getByLabel("Verification code").fill(totpCode(secret));
+  await page.getByRole("button", { name: "Verify and sign in" }).click();
   await expect(
     page.getByRole("button", { name: "Sign out", exact: true }),
   ).toBeVisible();
 }
 async function client(index = 0) {
   const api = await requests.newContext({ baseURL, extraHTTPHeaders: headers });
-  expect(
-    (
-      await api.post("/api/auth/login", {
-        data: {
-          email: accounts[index].email,
-          password: accounts[index].password,
-        },
-      })
-    ).status(),
-  ).toBe(200);
+  await apiLogin(api, accounts[index].email, accounts[index].password);
   return api;
 }
 async function state(api: APIRequestContext): Promise<ClinicSnapshot> {
@@ -153,6 +169,16 @@ test("health, protected API, wrong password, real sign-in, reload, logout revoca
   );
   await page.getByLabel("Password", { exact: true }).fill(accounts[0].password);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.getByLabel("Verification code")).toBeVisible();
+  // Password-only auth must not create a clinic session.
+  expect((await api.get("/api/clinic")).status()).toBe(401);
+  const setupSecret = (await page.getByTestId("mfa-secret").textContent())!.trim();
+  secrets.set(accounts[0].email, setupSecret);
+  await page.getByLabel("Verification code").fill("00000x");
+  await page.getByRole("button", { name: "Verify and sign in" }).click();
+  await expect(page.getByRole("alert")).toContainText("Invalid verification code");
+  await page.getByLabel("Verification code").fill(totpCode(setupSecret));
+  await page.getByRole("button", { name: "Verify and sign in" }).click();
   await expect(
     page.getByRole("heading", { name: "Clinic overview" }),
   ).toBeVisible();
@@ -378,13 +404,7 @@ test("invalid input, overlap, cross-clinic access, role restrictions and failed-
     baseURL,
     extraHTTPHeaders: headers,
   });
-  expect(
-    (
-      await owner.post("/api/auth/login", {
-        data: { email: ownerEmail, password: ownerPassword },
-      })
-    ).status(),
-  ).toBe(200);
+  await apiLogin(owner, ownerEmail, ownerPassword);
   expect(
     (
       await owner.post("/api/records", {
