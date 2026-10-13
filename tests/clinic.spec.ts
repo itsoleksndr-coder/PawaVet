@@ -371,6 +371,14 @@ test("consented reminders queue exactly once and cancellation/opt-out stops unse
   const newId = (await without.json()).id;
   expect((await (await api.get("/api/reminders")).json()).reminders
     .filter((j: { appointment_id: string }) => j.appointment_id === newId)).toHaveLength(0);
+  const reConsent = await api.patch("/api/owners/" + ownerId + "/reminder-preferences", {
+    data: { emailReminderConsent: true, smsReminderConsent: true },
+  });
+  expect(reConsent.status()).toBe(200);
+  const requeued = (await (await api.get("/api/reminders")).json()).reminders
+    .filter((j: { appointment_id: string }) => j.appointment_id === newId);
+  expect(requeued.map((j: { channel: string }) => j.channel).sort()).toEqual(["email", "sms"]);
+  expect(requeued.every((j: { status: string }) => j.status === "pending")).toBe(true);
   await api.dispose();
 });
 
