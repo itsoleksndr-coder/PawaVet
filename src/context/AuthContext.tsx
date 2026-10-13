@@ -185,7 +185,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         switchClinicTenant: unavailable,
         lockSession: () => setLocked(true),
         unlockSession: async (password, code) => {
-          const result = await login(currentUser?.email || "", password, code);
+          const result = await login(currentUser?.email || "", password, code, session?.rememberMe || false);
           return result.success;
         },
         toggle2FA: async () => {
