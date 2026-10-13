@@ -9,6 +9,7 @@ import { db, type Sql } from "./db";
 import { digest, hashPassword, verifyPassword } from "./security";
 import { newTotpSecret, encryptTotp, decryptTotp, verifyTotp, recoveryCodes } from "./mfa";
 import { queueAppointmentReminders, cancelAppointmentReminders, updateOwnerReminders } from "./reminders";
+import { supportRequest, supportAnswer } from "./support";
 import * as input from "./validation";
 import {
   ROLE_PERMISSIONS,
@@ -734,6 +735,34 @@ api.post(
       },
     );
     return res.status(201).json(result);
+  }),
+);
+api.post(
+  "/api/support/chat",
+  route(async (req, res) => {
+    // All four support specialties use real model responses, not mock content.
+    const user = (await actor(req)).profile;
+    const message = supportRequest.parse(req.body);
+    if (!process.env.OPENAI_API_KEY)
+      return res.status(503).json({ error: "Soporte de IA pendiente de configuración del proveedor." });
+    const database = await db();
+    const counter = await database.query<{ attempts: number }>(
+      `INSERT INTO login_limits(key,attempts,reset_at)
+      VALUES($1,1,now()+interval '15 minutes')
+      ON CONFLICT(key) DO UPDATE SET
+      attempts=CASE WHEN login_limits.reset_at < now() THEN 1 ELSE login_limits.attempts+1 END,
+      reset_at=CASE WHEN login_limits.reset_at < now() THEN now()+interval '15 minutes' ELSE login_limits.reset_at END
+      RETURNING attempts`,
+      [digest("support:" + user.id)],
+    );
+    if (counter.rows[0].attempts > 30)
+      return res.status(429).json({ error: "Límite de soporte alcanzado. Inténtalo después." });
+    try {
+      const answer = await supportAnswer(message);
+      return res.json({ agent: message.agent, answer });
+    } catch {
+      return res.status(503).json({ error: "El proveedor de soporte de IA no está disponible ahora." });
+    }
   }),
 );
 api.post(
