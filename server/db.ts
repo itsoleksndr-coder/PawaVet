@@ -93,6 +93,9 @@ export async function migrate() {
       `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS mfa_verified boolean NOT NULL DEFAULT false`,
     );
     await tx.query(
+      `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS remembered boolean NOT NULL DEFAULT false`,
+    );
+    await tx.query(
       `CREATE TABLE IF NOT EXISTS reminder_jobs (
         id text PRIMARY KEY,
         clinic_id text NOT NULL REFERENCES clinics(id),
