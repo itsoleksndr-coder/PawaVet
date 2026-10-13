@@ -200,6 +200,8 @@ export interface PetOwner {
   phone: string;
   address: string;
   emergencyContact: string;
+  emailReminderConsent?: boolean;
+  smsReminderConsent?: boolean;
   totalPets: number;
   registeredAt: string;
   balanceDue: number;
