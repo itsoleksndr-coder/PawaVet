@@ -85,5 +85,12 @@ export async function migrate() {
     await tx.query(
       `CREATE INDEX IF NOT EXISTS sessions_user_id ON sessions(user_id)`,
     );
+    await tx.query(
+      `CREATE TABLE IF NOT EXISTS user_mfa (user_id text PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, secret_cipher text NOT NULL, confirmed boolean NOT NULL DEFAULT false, recovery_hashes jsonb NOT NULL DEFAULT '[]'::jsonb)`,
+    );
+    // Old sessions must not bypass the newly required second factor.
+    await tx.query(
+      `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS mfa_verified boolean NOT NULL DEFAULT false`,
+    );
   });
 }
