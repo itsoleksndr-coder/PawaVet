@@ -7,6 +7,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { db, type Sql } from "./db";
 import { digest, hashPassword, verifyPassword } from "./security";
+import { newTotpSecret, encryptTotp, decryptTotp, verifyTotp, recoveryCodes } from "./mfa";
 import * as input from "./validation";
 import {
   ROLE_PERMISSIONS,
@@ -138,13 +139,13 @@ async function actor(req: Request, sql?: Sql) {
     clinic_id: string;
     token_hash: string;
   }>(
-    `SELECT u.profile, u.clinic_id, s.token_hash FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at > now()`,
+    `SELECT u.profile, u.clinic_id, s.token_hash FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at > now() AND s.mfa_verified=true`,
     [digest(token(req))],
   );
   const row = result.rows[0];
   if (!row || row.profile.status !== "Active")
     throw new HttpError(401, "Please sign in again.");
-  return { ...row, profile: safeUser(row.profile) };
+  return { ...row, profile: { ...safeUser(row.profile), isTwoFactorEnabled: true } };
 }
 function permit(user: User, permission: Permission) {
   if (!ROLE_PERMISSIONS[user.role].includes(permission))
@@ -160,7 +161,7 @@ async function sessionView(user: User) {
   ).query<{ profile: Clinic }>("SELECT profile FROM clinics WHERE id=$1", [
     user.clinicId,
   ]);
-  return { user: safeUser(user), clinic: result.rows[0].profile };
+  return { user: { ...safeUser(user), isTwoFactorEnabled: true }, clinic: result.rows[0].profile };
 }
 api.post(
   "/api/auth/login",
@@ -195,27 +196,80 @@ api.post(
     );
     if (!row || !valid || row.profile.status !== "Active")
       throw new HttpError(401, "Invalid email or password.");
-    if (row.profile.isTwoFactorEnabled)
-      throw new HttpError(
-        403,
-        "This account requires an authentication method that is not configured. Contact your administrator.",
-      );
+    // A password alone never grants an authenticated session.
+    if (!values.totpCode) {
+      const setup = await database.transaction(async (tx) => {
+        const existing = await tx.query<{ secret_cipher: string; confirmed: boolean }>(
+          "SELECT secret_cipher, confirmed FROM user_mfa WHERE user_id=$1 FOR UPDATE",
+          [row.profile.id],
+        );
+        if (existing.rows[0]?.confirmed) return null;
+        let secret: string;
+        if (existing.rows[0]) {
+          secret = decryptTotp(existing.rows[0].secret_cipher, row.profile.id);
+        } else {
+          const newSecret = newTotpSecret();
+          await tx.query(
+            "INSERT INTO user_mfa(user_id,secret_cipher) VALUES($1,$2) ON CONFLICT (user_id) DO NOTHING",
+            [row.profile.id, encryptTotp(newSecret, row.profile.id)],
+          );
+          const stored = await tx.query<{ secret_cipher: string }>(
+            "SELECT secret_cipher FROM user_mfa WHERE user_id=$1 FOR UPDATE",
+            [row.profile.id],
+          );
+          secret = decryptTotp(stored.rows[0].secret_cipher, row.profile.id);
+        }
+        const codes = recoveryCodes();
+        await tx.query(
+          "UPDATE user_mfa SET recovery_hashes=$2 WHERE user_id=$1 AND confirmed=false",
+          [row.profile.id, JSON.stringify(codes.map(digest))],
+        );
+        return { secret, recoveryCodes: codes };
+      });
+      return res.json({
+        requires2FA: true,
+        enrollmentRequired: Boolean(setup),
+        ...(setup ? {
+          enrollmentSecret: setup.secret,
+          recoveryCodes: setup.recoveryCodes,
+          otpauthUrl: `otpauth://totp/${encodeURIComponent("PawaVet:" + values.email)}?secret=${setup.secret}&issuer=PawaVet&algorithm=SHA1&digits=6&period=30`,
+        } : {}),
+      });
+    }
     const raw = randomBytes(32).toString("hex");
     await database.transaction(async (tx) => {
+      const found = await tx.query<{ secret_cipher: string; confirmed: boolean; recovery_hashes: string[] }>(
+        "SELECT secret_cipher, confirmed, recovery_hashes FROM user_mfa WHERE user_id=$1 FOR UPDATE",
+        [row.profile.id],
+      );
+      if (!found.rows[0]) throw new HttpError(401, "Set up an authenticator app first.");
+      const config = found.rows[0];
+      const code = values.totpCode!.trim().toUpperCase();
+      const validTotp = verifyTotp(decryptTotp(config.secret_cipher, row.profile.id), code);
+      const recoveryHash = digest(code);
+      const isRecovery = config.confirmed && config.recovery_hashes.includes(recoveryHash);
+      if (!validTotp && !isRecovery) throw new HttpError(401, "Invalid verification code.");
+      await tx.query(
+        "UPDATE user_mfa SET confirmed=true, recovery_hashes=$2 WHERE user_id=$1",
+        [row.profile.id, JSON.stringify(isRecovery
+          ? config.recovery_hashes.filter((hash) => hash !== recoveryHash)
+          : config.recovery_hashes)],
+      );
       await tx.query(
         "DELETE FROM sessions WHERE token_hash=$1 OR expires_at <= now()",
         [digest(token(req))],
       );
       await tx.query(
-        `INSERT INTO sessions(token_hash,user_id,expires_at) VALUES($1,$2,now()+interval '8 hours')`,
+        `INSERT INTO sessions(token_hash,user_id,expires_at,mfa_verified) VALUES($1,$2,now()+interval '8 hours',true)`,
         [digest(raw), row.profile.id],
       );
+      await tx.query("DELETE FROM login_limits WHERE key=$1", [digest(`email:${values.email}`)]);
     });
     res.cookie(cookieName, raw, {
       ...cookieOptions,
       maxAge: 8 * 60 * 60 * 1000,
     });
-    return res.json(await sessionView(row.profile));
+    return res.json(await sessionView({ ...row.profile, isTwoFactorEnabled: true }));
   }),
 );
 api.get(
