@@ -140,8 +140,9 @@ async function actor(req: Request, sql?: Sql) {
     profile: User;
     clinic_id: string;
     token_hash: string;
+    remembered: boolean;
   }>(
-    `SELECT u.profile, u.clinic_id, s.token_hash FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at > now() AND s.mfa_verified=true`,
+    `SELECT u.profile, u.clinic_id, s.token_hash, s.remembered FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at > now() AND s.mfa_verified=true`,
     [digest(token(req))],
   );
   const row = result.rows[0];
@@ -157,13 +158,13 @@ function staffOnly(user: User) {
   if (user.role === "PET_OWNER")
     throw new HttpError(403, "Clinic staff access required.");
 }
-async function sessionView(user: User) {
+async function sessionView(user: User, rememberMe = false) {
   const result = await (
     await db()
   ).query<{ profile: Clinic }>("SELECT profile FROM clinics WHERE id=$1", [
     user.clinicId,
   ]);
-  return { user: { ...safeUser(user), isTwoFactorEnabled: true }, clinic: result.rows[0].profile };
+  return { user: { ...safeUser(user), isTwoFactorEnabled: true }, clinic: result.rows[0].profile, rememberMe };
 }
 api.post(
   "/api/auth/login",
@@ -263,23 +264,24 @@ api.post(
         [digest(token(req))],
       );
       await tx.query(
-        `INSERT INTO sessions(token_hash,user_id,expires_at,mfa_verified) VALUES($1,$2,now()+($3::int * interval '1 hour'),true)`,
-        [digest(raw), row.profile.id, sessionHours],
+        `INSERT INTO sessions(token_hash,user_id,expires_at,mfa_verified,remembered) VALUES($1,$2,now()+($3::int * interval '1 hour'),true,$4)`,
+        [digest(raw), row.profile.id, sessionHours, values.rememberMe],
       );
       await tx.query("DELETE FROM login_limits WHERE key=$1", [digest(`email:${values.email}`)]);
     });
     res.cookie(cookieName, raw, {
       ...cookieOptions,
-      maxAge: sessionHours * 60 * 60 * 1000,
+      ...(values.rememberMe ? { maxAge: sessionHours * 60 * 60 * 1000 } : {}),
     });
-    return res.json(await sessionView({ ...row.profile, isTwoFactorEnabled: true }));
+    return res.json(await sessionView({ ...row.profile, isTwoFactorEnabled: true }, values.rememberMe));
   }),
 );
 api.get(
   "/api/auth/session",
-  route(async (req, res) =>
-    res.json(await sessionView((await actor(req)).profile)),
-  ),
+  route(async (req, res) => {
+    const active = await actor(req);
+    return res.json(await sessionView(active.profile, active.remembered));
+  }),
 );
 api.post(
   "/api/auth/logout",
