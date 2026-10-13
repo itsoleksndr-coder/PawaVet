@@ -13,6 +13,10 @@ export function AuthModal({
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [step, setStep] = useState<"password" | "verify">("password");
+  const [code, setCode] = useState("");
+  const [secret, setSecret] = useState("");
+  const [recovery, setRecovery] = useState<string[]>([]);
   if (!isOpen) return null;
   return (
     <main className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-6">
@@ -23,9 +27,16 @@ export function AuthModal({
           setBusy(true);
           setError("");
           try {
-            const result = await login(email, password);
-            if (result.success) onClose();
-            else setError(result.message || "Sign-in failed.");
+            const result = await login(email, password, step === "verify" ? code : undefined);
+            if (result.success) {
+              setPassword("");
+              setCode("");
+              onClose();
+            } else if (result.requires2FA) {
+              setSecret(result.enrollmentSecret || "");
+              setRecovery(result.recoveryCodes || []);
+              setStep("verify");
+            } else setError(result.message || "Sign-in failed.");
           } finally {
             setBusy(false);
           }
@@ -34,9 +45,9 @@ export function AuthModal({
         <p className="text-teal-400 font-bold">PawaVet · Puerto Rico</p>
         <h1 className="text-2xl font-bold">Sign in to your clinic</h1>
         <p className="text-sm text-slate-400">
-          Use the account provisioned by your clinic administrator.
+          {step === "password" ? "Use the account provisioned by your clinic administrator." : "Every account needs an authenticator code."}
         </p>
-        <label className="block">
+        {step === "password" && <label className="block">
           Email
           <input
             aria-label="Email"
@@ -47,8 +58,8 @@ export function AuthModal({
             onChange={(e) => setEmail(e.target.value)}
             className="block w-full mt-2 p-3 rounded-xl bg-slate-950 border border-slate-700"
           />
-        </label>
-        <label className="block">
+        </label>}
+        {step === "password" && <label className="block">
           Password
           <input
             aria-label="Password"
@@ -59,7 +70,24 @@ export function AuthModal({
             onChange={(e) => setPassword(e.target.value)}
             className="block w-full mt-2 p-3 rounded-xl bg-slate-950 border border-slate-700"
           />
-        </label>
+        </label>}
+        {step === "verify" && (
+          <div className="space-y-3">
+            {secret && (
+              <div className="text-sm space-y-2">
+                <p>First sign-in: enter this setup key into Google Authenticator, Microsoft Authenticator or a compatible authenticator app:</p>
+                <code data-testid="mfa-secret" className="block break-all p-3 bg-slate-950 rounded-xl select-all">{secret}</code>
+                <p className="text-amber-200">Save your recovery codes privately before continuing. Each code works once and these are not shown again after setup.</p>
+                <code data-testid="mfa-recovery" className="block whitespace-pre-wrap break-words p-3 bg-slate-950 rounded-xl select-all">{recovery.join("\n")}</code>
+              </div>
+            )}
+            <label className="block">
+              Verification code
+              <input aria-label="Verification code" autoComplete="one-time-code" required value={code} onChange={(e) => setCode(e.target.value)} maxLength={40} className="block w-full mt-2 p-3 rounded-xl bg-slate-950 border border-slate-700" placeholder="6-digit app code or recovery code" />
+            </label>
+            <button type="button" className="text-sm text-teal-300 underline" onClick={() => { setStep("password"); setCode(""); setSecret(""); setRecovery([]); setError(""); }}>Use a different account</button>
+          </div>
+        )}
         {error && (
           <p role="alert" className="text-rose-300">
             {error}
@@ -69,7 +97,7 @@ export function AuthModal({
           disabled={busy}
           className="w-full p-3 rounded-xl bg-teal-600 font-bold disabled:opacity-50"
         >
-          {busy ? "Signing in…" : "Sign in"}
+          {busy ? "Checking…" : step === "verify" ? "Verify and sign in" : "Sign in"}
         </button>
       </form>
     </main>
