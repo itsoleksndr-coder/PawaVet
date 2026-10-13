@@ -13,6 +13,8 @@ import { request } from "../api-client";
 interface LoginResult {
   success: boolean;
   requires2FA?: boolean;
+  enrollmentSecret?: string;
+  recoveryCodes?: string[];
   message?: string;
   user?: User;
 }
@@ -58,7 +60,7 @@ interface AuthContextType {
   switchDemoRole: (role: UserRole, targetClinicId?: string) => void;
   switchClinicTenant: (clinicId: string) => void;
   lockSession: () => void;
-  unlockSession: (pinOrPassword: string) => Promise<boolean>;
+  unlockSession: (pinOrPassword: string, code?: string) => Promise<boolean>;
   toggle2FA: (enable: boolean, secret?: string) => Promise<boolean>;
   revokeSession: (sessionId: string) => void;
   revokeAllOtherSessions: () => void;
@@ -96,12 +98,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
       .finally(() => setLoading(false));
     return () => window.removeEventListener("pawavet-session-expired", expire);
   }, []);
-  const login = async (email: string, password = ""): Promise<LoginResult> => {
+  const login = async (email: string, password = "", totpCode?: string): Promise<LoginResult> => {
     try {
-      const next = await request<AuthSession>("/api/auth/login", "POST", {
+      const next = await request<AuthSession | { requires2FA: true; enrollmentSecret?: string; recoveryCodes?: string[] }>("/api/auth/login", "POST", {
         email,
         password,
+        ...(totpCode ? { totpCode } : {}),
       });
+      if ("requires2FA" in next) {
+        return { success: false, requires2FA: true, enrollmentSecret: next.enrollmentSecret, recoveryCodes: next.recoveryCodes };
+      }
       setSession(next);
       setLocked(false);
       setError("");
@@ -176,8 +182,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({
         switchDemoRole: unavailable,
         switchClinicTenant: unavailable,
         lockSession: () => setLocked(true),
-        unlockSession: async (password) => {
-          const result = await login(currentUser?.email || "", password);
+        unlockSession: async (password, code) => {
+          const result = await login(currentUser?.email || "", password, code);
           return result.success;
         },
         toggle2FA: async () => {
