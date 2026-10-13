@@ -31,6 +31,7 @@ const headers = {
 };
 let serverOutput = "";
 const secrets = new Map<string, string>();
+let savedRecoveryCode = "";
 const mfaKey = Buffer.alloc(32, 7).toString("base64");
 async function apiLogin(api: APIRequestContext, email: string, password: string) {
   const first = await api.post("/api/auth/login", { data: { email, password } });
@@ -172,7 +173,8 @@ test("health, protected API, wrong password, real sign-in, reload, logout revoca
   await expect(page.getByLabel("Verification code")).toBeVisible();
   // Password-only auth must not create a clinic session.
   expect((await api.get("/api/clinic")).status()).toBe(401);
-  const setupSecret = (await page.getByTestId("mfa-secret").textContent())!.trim();
+  const setupSecret = remote ? process.env.E2E_TOTP_SECRET! : (await page.getByTestId("mfa-secret").textContent())!.trim();
+  if (!remote) savedRecoveryCode = (await page.getByTestId("mfa-recovery").textContent())!.trim().split(/\s+/)[0];
   secrets.set(accounts[0].email, setupSecret);
   await page.getByLabel("Verification code").fill("00000x");
   await page.getByRole("button", { name: "Verify and sign in" }).click();
@@ -204,6 +206,30 @@ test("health, protected API, wrong password, real sign-in, reload, logout revoca
   expect((await revoked.get("/api/clinic")).status()).toBe(401);
   await revoked.dispose();
   await api.dispose();
+});
+
+test("MFA recovery codes are single use; password alone never opens a session", async () => {
+  test.skip(remote, "Recovery tests use local disposable accounts only.");
+  const first = await requests.newContext({ baseURL, extraHTTPHeaders: headers });
+  const challenge = await first.post("/api/auth/login", {
+    data: { email: accounts[0].email, password: accounts[0].password },
+  });
+  expect(challenge.status()).toBe(200);
+  expect((await challenge.json()).requires2FA).toBe(true);
+  expect((await first.get("/api/clinic")).status()).toBe(401);
+  const redeemed = await first.post("/api/auth/login", {
+    data: { email: accounts[0].email, password: accounts[0].password, totpCode: savedRecoveryCode },
+  });
+  expect(redeemed.status()).toBe(200);
+  expect((await first.get("/api/clinic")).status()).toBe(200);
+  await first.dispose();
+  const second = await requests.newContext({ baseURL, extraHTTPHeaders: headers });
+  const rejected = await second.post("/api/auth/login", {
+    data: { email: accounts[0].email, password: accounts[0].password, totpCode: savedRecoveryCode },
+  });
+  expect(rejected.status()).toBe(401);
+  expect((await second.get("/api/clinic")).status()).toBe(401);
+  await second.dispose();
 });
 
 test("patient → visit → clinical record persists across reload and a second session", async ({
