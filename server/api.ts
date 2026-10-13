@@ -427,21 +427,35 @@ api.post(
 );
 api.patch(
   "/api/owners/:id/reminder-preferences",
-  route(async (req, res) =>
-    res.json(
-      await mutate(req, "REMINDER_CONSENT_UPDATED", async (data, user, tx) => {
-        const owner = data.petOwners.find(o => o.id === req.params.id);
-        if (!owner) throw new HttpError(404, "Owner not found.");
-        if (user.role === "PET_OWNER" && user.ownerId !== owner.id)
-          throw new HttpError(403, "Not your reminder preferences.");
-        const consent = input.reminderConsentInput.parse(req.body);
-        owner.emailReminderConsent = consent.emailReminderConsent;
-        owner.smsReminderConsent = consent.smsReminderConsent;
-        await updateOwnerReminders(tx, data, owner);
-        return { ownerId: owner.id, ...consent };
-      }),
-    ),
-  ),
+  route(async (req, res) => {
+    const consent = input.reminderConsentInput.parse(req.body);
+    // Opt-out is a privacy right even when the clinic subscription has expired.
+    const value = await (await db()).transaction(async tx => {
+      const user = (await actor(req, tx)).profile;
+      const record = await tx.query<{ data: ClinicData }>(
+        "SELECT data FROM clinics WHERE id=$1 FOR UPDATE", [user.clinicId],
+      );
+      const data = record.rows[0].data;
+      const owner = data.petOwners.find(o => o.id === req.params.id);
+      if (!owner) throw new HttpError(404, "Owner not found.");
+      if (user.role === "PET_OWNER" && user.ownerId !== owner.id)
+        throw new HttpError(403, "Not your reminder preferences.");
+      if (user.role !== "PET_OWNER") permit(user, "pets:create");
+      owner.emailReminderConsent = consent.emailReminderConsent;
+      owner.smsReminderConsent = consent.smsReminderConsent;
+      await updateOwnerReminders(tx, data, owner);
+      data.auditLogs.unshift({
+        id: randomUUID(), timestamp: new Date().toISOString(),
+        action: "REMINDER_CONSENT_UPDATED", severity: "info",
+        actorId: user.id, actorName: user.name, actorRole: user.role,
+        clinicId: user.clinicId, ipAddress: req.ip || "",
+        targetResource: "Reminder preferences", details: "Consent preferences updated.",
+      });
+      await tx.query("UPDATE clinics SET data=$1 WHERE id=$2", [JSON.stringify(data), user.clinicId]);
+      return { ownerId: owner.id, ...consent };
+    });
+    return res.json(value);
+  }),
 );
 api.get(
   "/api/reminders",
