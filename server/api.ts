@@ -237,6 +237,7 @@ api.post(
       });
     }
     const raw = randomBytes(32).toString("hex");
+    const sessionHours = values.rememberMe ? 24 * 30 : 8;
     await database.transaction(async (tx) => {
       const found = await tx.query<{ secret_cipher: string; confirmed: boolean; recovery_hashes: string[] }>(
         "SELECT secret_cipher, confirmed, recovery_hashes FROM user_mfa WHERE user_id=$1 FOR UPDATE",
@@ -260,14 +261,14 @@ api.post(
         [digest(token(req))],
       );
       await tx.query(
-        `INSERT INTO sessions(token_hash,user_id,expires_at,mfa_verified) VALUES($1,$2,now()+interval '8 hours',true)`,
-        [digest(raw), row.profile.id],
+        `INSERT INTO sessions(token_hash,user_id,expires_at,mfa_verified) VALUES($1,$2,now()+($3::int * interval '1 hour'),true)`,
+        [digest(raw), row.profile.id, sessionHours],
       );
       await tx.query("DELETE FROM login_limits WHERE key=$1", [digest(`email:${values.email}`)]);
     });
     res.cookie(cookieName, raw, {
       ...cookieOptions,
-      maxAge: 8 * 60 * 60 * 1000,
+      maxAge: sessionHours * 60 * 60 * 1000,
     });
     return res.json(await sessionView({ ...row.profile, isTwoFactorEnabled: true }));
   }),
