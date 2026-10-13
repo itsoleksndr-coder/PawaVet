@@ -13,6 +13,7 @@ export function AuthModal({
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [rememberMe, setRememberMe] = useState(false);
   const [step, setStep] = useState<"password" | "verify">("password");
   const [code, setCode] = useState("");
   const [secret, setSecret] = useState("");
@@ -27,7 +28,7 @@ export function AuthModal({
           setBusy(true);
           setError("");
           try {
-            const result = await login(email, password, step === "verify" ? code : undefined);
+            const result = await login(email, password, step === "verify" ? code : undefined, rememberMe);
             if (result.success) {
               setPassword("");
               setCode("");
@@ -87,6 +88,12 @@ export function AuthModal({
             </label>
             <button type="button" className="text-sm text-teal-300 underline" onClick={() => { setStep("password"); setCode(""); setSecret(""); setRecovery([]); setError(""); }}>Use a different account</button>
           </div>
+        )}
+        {step === "password" && (
+          <label className="flex items-center gap-2 text-sm text-slate-300">
+            <input aria-label="Remember me for 30 days" type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} />
+            Recuérdame en este dispositivo durante 30 días
+          </label>
         )}
         {error && (
           <p role="alert" className="text-rose-300">
