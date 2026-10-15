@@ -1,0 +1,41 @@
+name: Repair vulnerable dependency lockfile
+on:
+  push:
+    branches: [security/mandatory-mfa-all-users-20261013]
+    paths:
+      - .github/workflows/repair-dependencies.yml
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  repair:
+    if: github.repository == 'itsoleksndr-coder/PawaVet'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: security/mandatory-mfa-all-users-20261013
+          persist-credentials: true
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Repair compatible lockfile versions
+        run: npm audit fix --package-lock-only
+      - run: npm ci
+      - name: Block critical or high runtime vulnerabilities
+        run: npm audit --omit=dev --audit-level=high
+      - run: npx playwright install --with-deps chromium
+      - run: npm run verify
+      - name: Save verified dependency lockfile
+        run: |
+          git diff --exit-code -- package.json
+          if ! git diff --quiet -- package-lock.json; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add package-lock.json
+            git commit -m "Fix audited vulnerable runtime dependency versions"
+            git push origin HEAD:refs/heads/security/mandatory-mfa-all-users-20261013
+          fi
