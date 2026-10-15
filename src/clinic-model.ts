@@ -39,6 +39,7 @@ export interface ClinicSnapshot extends ClinicData {
 export interface AuthSession {
   user: User;
   clinic: Clinic;
+  rememberMe?: boolean;
 }
 export const emptyData = (): ClinicData => ({
   pets: [],

@@ -16,6 +16,12 @@ export const ownerInput = z.object({
   phone: required,
   address: text.default(""),
   emergencyContact: text.default(""),
+  emailReminderConsent: z.boolean().default(false),
+  smsReminderConsent: z.boolean().default(false),
+});
+export const reminderConsentInput = z.object({
+  emailReminderConsent: z.boolean(),
+  smsReminderConsent: z.boolean(),
 });
 export const petInput = z.object({
   name: required,
@@ -103,6 +109,8 @@ export const loginInput = z.object({
     .max(254)
     .transform((s) => s.toLowerCase()),
   password: z.string().min(1).max(256),
+  totpCode: z.string().trim().min(6).max(40).optional(),
+  rememberMe: z.boolean().optional().default(false),
 });
 export const staffInput = z.object({
   name: required,

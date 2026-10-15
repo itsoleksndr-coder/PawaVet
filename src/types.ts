@@ -147,6 +147,7 @@ export type AuditActionType =
   | "INVOICE_GENERATED"
   | "INVOICE_PAID"
   | "REMINDER_DISPATCHED"
+  | "REMINDER_CONSENT_UPDATED"
   | "URGENT_INTAKE_CREATED"
   | "URGENT_INTAKE_REVIEWED";
 
@@ -200,6 +201,8 @@ export interface PetOwner {
   phone: string;
   address: string;
   emergencyContact: string;
+  emailReminderConsent?: boolean;
+  smsReminderConsent?: boolean;
   totalPets: number;
   registeredAt: string;
   balanceDue: number;

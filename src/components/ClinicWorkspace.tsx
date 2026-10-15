@@ -1,5 +1,7 @@
 import React, { useState, useId } from "react";
 import { SubscriptionPanel } from "./SubscriptionPanel";
+import { ReminderPanel } from "./ReminderPanel";
+import { SupportPanel } from "./SupportPanel";
 import { useAuth } from "../context/AuthContext";
 import { useData } from "../context/DataContext";
 const field =
@@ -104,13 +106,15 @@ export function ClinicWorkspace() {
     </select>
   );
   const tabs = isPetOwner
-    ? ["Today", "Patients", "Appointments", "Urgent care", "Account"]
+    ? ["Today", "Patients", "Appointments", "Urgent care", "Support", "Account"]
     : [
         "Today",
         "Patients",
         "Appointments",
         "Records",
         "Urgent care",
+        "Reminders",
+        "Support",
         ...(hasPermission("staff:invite") ? ["Staff", "Subscription"] : []),
         "Account",
       ];
@@ -178,6 +182,8 @@ export function ClinicWorkspace() {
           </p>
         )}
         {tab === "Subscription" && <SubscriptionPanel />}
+        {tab === "Reminders" && !isPetOwner && <ReminderPanel />}
+        {tab === "Support" && <SupportPanel />}
         {tab === "Today" && (
           <>
             <h2 className="text-2xl font-bold">Clinic overview</h2>
@@ -202,8 +208,7 @@ export function ClinicWorkspace() {
               review.
             </p>
             <p className="text-sm text-amber-300">
-              Email reminders, payment collection, telemedicine and AI
-              assistance are not available in this release.
+              Outbound reminders and AI support require provider credentials and an enabled Railway worker. Telemedicine is not available in this release.
             </p>
           </>
         )}
@@ -220,6 +225,8 @@ export function ClinicWorkspace() {
                       name: text(f, "name"),
                       email: text(f, "email"),
                       phone: text(f, "phone"),
+                      emailReminderConsent: new FormData(f).get("emailReminderConsent") === "on",
+                      smsReminderConsent: new FormData(f).get("smsReminderConsent") === "on",
                     }))
                   }
                 >
@@ -238,6 +245,14 @@ export function ClinicWorkspace() {
                   <Field label="Phone">
                     <input name="phone" type="tel" required className={field} />
                   </Field>
+                  <label className="flex items-start gap-2 text-sm text-slate-300">
+                    <input type="checkbox" name="emailReminderConsent" aria-label="Owner consented to email reminders" />
+                    El dueño autorizó expresamente recordatorios por correo electrónico.
+                  </label>
+                  <label className="flex items-start gap-2 text-sm text-slate-300">
+                    <input type="checkbox" name="smsReminderConsent" aria-label="Owner consented to SMS reminders" />
+                    El dueño autorizó expresamente recordatorios SMS. Confirmar que el teléfono es correcto.
+                  </label>
                   <button disabled={busy} className={button}>
                     Save owner
                   </button>
@@ -293,6 +308,22 @@ export function ClinicWorkspace() {
                 </form>
               </div>
             )}
+            <div className="grid sm:grid-cols-2 gap-3">
+              {petOwners.map(owner => (
+                <form key={owner.id} aria-label={"Reminder consent for " + owner.name} className={panel}
+                  onSubmit={(e) => { e.preventDefault(); const f=e.currentTarget;
+                    void act(() => mutate("/api/owners/" + owner.id + "/reminder-preferences","PATCH",{
+                      emailReminderConsent: new FormData(f).get("emailReminderConsent") === "on",
+                      smsReminderConsent: new FormData(f).get("smsReminderConsent") === "on",
+                    }),"Reminder preferences updated."); }}>
+                  <h3 className="font-bold">{owner.name} · Preferencias de mensajes</h3>
+                  <p className="text-xs text-slate-400">Las autorizaciones deben proceder del dueño. Desmarca una opción para revocarla.</p>
+                  <label className="flex gap-2 items-center"><input name="emailReminderConsent" type="checkbox" defaultChecked={Boolean(owner.emailReminderConsent)} key={owner.id + ":email:" + owner.emailReminderConsent} /> Email</label>
+                  <label className="flex gap-2 items-center"><input name="smsReminderConsent" type="checkbox" defaultChecked={Boolean(owner.smsReminderConsent)} key={owner.id + ":sms:" + owner.smsReminderConsent} /> SMS</label>
+                  <button disabled={busy} className={button}>Save reminder preferences</button>
+                </form>
+              ))}
+            </div>
             <div className="grid sm:grid-cols-2 gap-3">
               {pets.map((p) => (
                 <article key={p.id} className={panel}>

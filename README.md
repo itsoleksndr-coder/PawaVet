@@ -46,7 +46,7 @@ As of September 20, 2026, the connected Vercel account returned 403 for the exis
 
 ## Boundaries
 
-This is an assisted-onboarding clinic pilot with subscription integration awaiting hosted verification. Email/SMS reminders, patient payment collection, telemedicine, AI generation, 2FA, self-service recovery, staff suspension/role editing, record amendments and automated backups are not available through this workspace. Unsupported operations do not report fake delivery/payment/AI success. The AI endpoint returns an explicit unavailable error. Owner views do not expose internal clinical records; a reviewed owner-facing summary/export remains future work. Urgent intake tracks review and priority but does not automatically create an encounter. Register a patient before intake.
+This is an assisted-onboarding clinic pilot with subscription integration awaiting hosted verification. Patient payment collection, telemedicine, clinical AI generation, self-service password recovery, staff suspension/role editing, record amendments and automated backups are not available through this workspace. Unsupported operations do not report fake delivery/payment/AI success. The AI endpoint returns an explicit unavailable error. Owner views do not expose internal clinical records; a reviewed owner-facing summary/export remains future work. Urgent intake tracks review and priority but does not automatically create an encounter. Register a patient before intake.
 
 Storage uses one transactional JSONB document per clinic for the pilot data, with SQL row locking for atomic updates/conflict checks. Users and hashed sessions have separate tables. This preserves isolation and avoids lost updates at pilot scale; normalized tables/pagination will be needed before larger datasets. Session cookies are HttpOnly, SameSite Strict, Secure on HTTPS/Vercel, expire in eight hours, and are backed by revocable server tokens. Passwords use salted scrypt. API authorization is server-enforced from session membership, never client-provided clinic/role IDs.
 
@@ -65,3 +65,35 @@ Setup is assisted, not public self-service signup. Provision the clinic administ
 5. Before live use, connect the correct live Stripe account, publish actual terms/privacy and billing support, and review tax obligations/registrations and price tax treatment. This implementation does not enable Stripe Tax automatically. Set `TERMS_URL`, `PRIVACY_URL`, `SUPPORT_EMAIL`, HTTPS `APP_URL`, and the live price/key/webhook secret. Set `BILLING_TAX_REVIEWED=true` and `BILLING_LAUNCH_APPROVED=true` only after completing those reviews and hosted verification. Both flags and enforcement are required for live checkout.
 
 `npm run test:billing` covers server price validation, concurrent checkout attempts, signature tampering, entitlement enforcement, portal customer isolation and stale/duplicate webhook handling against an isolated local SQL database. `npm run verify` includes it plus the browser bot. The connected Stripe account was test-only at verification time; no live product, charge or subscription has been created by this work.
+
+
+## Required two-factor authentication (pending staging verification)
+
+All staff, administrators and pet-owner accounts must enter a password AND an authenticator app code for every login. The first password check starts required TOTP setup, provides an authenticator key for manual entry and ten one-time recovery codes. No session is issued until an app code verifies the account. Existing sessions are invalidated by the `mfa_verified` session column, which defaults to false. Subsequent logins accept a six-digit app code or one saved recovery code. Recovery codes are stored as hashes and consumed atomically.
+
+Before activating this change in Railway:
+1. Generate a secure random 32-byte key and configure its base64 encoding as `MFA_ENCRYPTION_KEY` in the production service secret variables. Preserve the key outside the service securely: losing/rotating it without a migration will lock out accounts with enrolled MFA.
+2. Run the database migration and verify account enrollment, logout, clinic isolation and owner access in a staging database. Existing sessions will be rejected after this deployment.
+3. Establish a manual identity-verified procedure for users who lose both an authenticator and recovery codes. This change deliberately provides no email or administrator bypass.
+4. Clear dependency security issues and run the browser/API verification suite. Neither deployment nor hosted verification is asserted by this branch.
+
+The UI supports manual authenticator key entry; a QR code is not yet implemented. Self-service password recovery and outbound SMS/email are separate future functions.
+
+
+## Remember me (30 days)
+The sign-in screen offers a **Recuérdame** checkbox. Only after successful password and mandatory authenticator validation does it create a durable 30-day HttpOnly/SameSite/HTTPS-only cookie and a matching revocable server session; unchecked sign-in uses a browser session cookie with an 8-hour server limit. Logout and password changes revoke the server session. Closing a browser does not force another sign-in if the 30-day option was selected, the cookie was retained, and the session has not been revoked. After the web app's idle-lock triggers, unlocking requires the second factor again and preserves the remember-me selection.
+
+## Appointment reminders (code complete, provider activation outstanding)
+The app persists opt-in notification jobs in PostgreSQL on future appointment creation. New owner registration and owner preference forms have explicit, separate email/SMS consent flags; both default to off. Sending is intended 24h before the appointment in `America/Puerto_Rico` (UTC-4 year-round), or on the next worker run for a short-notice booking. Cancellation or consent withdrawal cancels pending jobs. A staff-only Reminders view displays statuses. The worker checks the latest appointment and consent before attempting delivery.
+
+For **email** (Resend), configure `RESEND_API_KEY` and a verified `REMINDER_FROM_EMAIL`. For **SMS** (Twilio), configure `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN` and `TWILIO_FROM_NUMBER` with Puerto Rico-capable messaging permissions. Validate sender/domain compliance and recipients' consent. SMS destinations must be valid PR/+1 numbers. **Only after completing provider tests**, set `REMINDERS_WORKER_ENABLED=true` in Railway and keep a continuously running worker. This pilot runs the worker once a minute in the application process, with database row locking for concurrent replicas. On an ambiguous provider outcome, the job is marked `unknown` for review, not silently retried, to reduce duplicate messages. The worker must not be represented as sending notifications until the actual providers are configured and live tests succeed. The application only reports that a message was accepted by the provider, not delivered to an inbox or handset.
+
+## Four AI support specialists (code complete, provider activation outstanding)
+The Support tab exposes Citas/recordatorios, Cuentas/acceso, Facturación and Soporte técnico, each with distinct model instructions. They use the OpenAI Responses API through the backend, never an invented canned answer. Configure `OPENAI_API_KEY` on Railway and optionally `OPENAI_MODEL` (default `gpt-4.1-mini`), then verify actual API replies with a synthetic account. Until configured, the endpoint explicitly returns 503 without pretending that assistance was generated. Authenticated sessions and per-account throttling protect the endpoint. Requests use `store=false`; no patient records or database tables are passed automatically to the provider. The support specialists are available on-demand while the web service and third-party provider are operating. They are not independent background agents, cannot modify appointments, and make no uptime guarantee.
+
+## Deployment checklist for the above features
+1. Keep this feature branch as a draft PR until all tests pass and a staging environment has exercised the workflows.
+2. Configure and securely back up `MFA_ENCRYPTION_KEY`, verified notification provider credentials, and the AI provider API key directly in Railway's protected variables. Never paste secrets into code, chat, tickets or PRs.
+3. Verify sender/phone ownership, opt-in records, recovery operations, missing-provider responses and provider acceptance on synthetic test recipients.
+4. Re-run `npm run verify`, check an independent dependency vulnerability audit, then test on a staged instance. A successful build alone is not proof of end-to-end message delivery.
+5. Merge and deploy only after the production authentication/key migration and rollback plan have been reviewed.
