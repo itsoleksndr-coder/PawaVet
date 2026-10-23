@@ -7,6 +7,9 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { db, type Sql } from "./db";
 import { digest, hashPassword, verifyPassword } from "./security";
+import { newTotpSecret, encryptTotp, decryptTotp, verifyTotp, recoveryCodes } from "./mfa";
+import { queueAppointmentReminders, cancelAppointmentReminders, updateOwnerReminders } from "./reminders";
+import { supportRequest, supportAnswer } from "./support";
 import * as input from "./validation";
 import {
   ROLE_PERMISSIONS,
@@ -137,14 +140,15 @@ async function actor(req: Request, sql?: Sql) {
     profile: User;
     clinic_id: string;
     token_hash: string;
+    remembered: boolean;
   }>(
-    `SELECT u.profile, u.clinic_id, s.token_hash FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at > now()`,
+    `SELECT u.profile, u.clinic_id, s.token_hash, s.remembered FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token_hash=$1 AND s.expires_at > now() AND s.mfa_verified=true`,
     [digest(token(req))],
   );
   const row = result.rows[0];
   if (!row || row.profile.status !== "Active")
     throw new HttpError(401, "Please sign in again.");
-  return { ...row, profile: safeUser(row.profile) };
+  return { ...row, profile: { ...safeUser(row.profile), isTwoFactorEnabled: true } };
 }
 function permit(user: User, permission: Permission) {
   if (!ROLE_PERMISSIONS[user.role].includes(permission))
@@ -154,13 +158,13 @@ function staffOnly(user: User) {
   if (user.role === "PET_OWNER")
     throw new HttpError(403, "Clinic staff access required.");
 }
-async function sessionView(user: User) {
+async function sessionView(user: User, rememberMe = false) {
   const result = await (
     await db()
   ).query<{ profile: Clinic }>("SELECT profile FROM clinics WHERE id=$1", [
     user.clinicId,
   ]);
-  return { user: safeUser(user), clinic: result.rows[0].profile };
+  return { user: { ...safeUser(user), isTwoFactorEnabled: true }, clinic: result.rows[0].profile, rememberMe };
 }
 api.post(
   "/api/auth/login",
@@ -195,34 +199,89 @@ api.post(
     );
     if (!row || !valid || row.profile.status !== "Active")
       throw new HttpError(401, "Invalid email or password.");
-    if (row.profile.isTwoFactorEnabled)
-      throw new HttpError(
-        403,
-        "This account requires an authentication method that is not configured. Contact your administrator.",
-      );
+    // A password alone never grants an authenticated session.
+    if (!values.totpCode) {
+      const setup = await database.transaction(async (tx) => {
+        const existing = await tx.query<{ secret_cipher: string; confirmed: boolean }>(
+          "SELECT secret_cipher, confirmed FROM user_mfa WHERE user_id=$1 FOR UPDATE",
+          [row.profile.id],
+        );
+        if (existing.rows[0]?.confirmed) return null;
+        let secret: string;
+        if (existing.rows[0]) {
+          secret = decryptTotp(existing.rows[0].secret_cipher, row.profile.id);
+        } else {
+          const newSecret = newTotpSecret();
+          await tx.query(
+            "INSERT INTO user_mfa(user_id,secret_cipher) VALUES($1,$2) ON CONFLICT (user_id) DO NOTHING",
+            [row.profile.id, encryptTotp(newSecret, row.profile.id)],
+          );
+          const stored = await tx.query<{ secret_cipher: string }>(
+            "SELECT secret_cipher FROM user_mfa WHERE user_id=$1 FOR UPDATE",
+            [row.profile.id],
+          );
+          secret = decryptTotp(stored.rows[0].secret_cipher, row.profile.id);
+        }
+        const codes = recoveryCodes();
+        await tx.query(
+          "UPDATE user_mfa SET recovery_hashes=$2 WHERE user_id=$1 AND confirmed=false",
+          [row.profile.id, JSON.stringify(codes.map(digest))],
+        );
+        return { secret, recoveryCodes: codes };
+      });
+      return res.json({
+        requires2FA: true,
+        enrollmentRequired: Boolean(setup),
+        ...(setup ? {
+          enrollmentSecret: setup.secret,
+          recoveryCodes: setup.recoveryCodes,
+          otpauthUrl: `otpauth://totp/${encodeURIComponent("PawaVet:" + values.email)}?secret=${setup.secret}&issuer=PawaVet&algorithm=SHA1&digits=6&period=30`,
+        } : {}),
+      });
+    }
     const raw = randomBytes(32).toString("hex");
+    const sessionHours = values.rememberMe ? 24 * 30 : 8;
     await database.transaction(async (tx) => {
+      const found = await tx.query<{ secret_cipher: string; confirmed: boolean; recovery_hashes: string[] }>(
+        "SELECT secret_cipher, confirmed, recovery_hashes FROM user_mfa WHERE user_id=$1 FOR UPDATE",
+        [row.profile.id],
+      );
+      if (!found.rows[0]) throw new HttpError(401, "Set up an authenticator app first.");
+      const config = found.rows[0];
+      const code = values.totpCode!.trim().toUpperCase();
+      const validTotp = verifyTotp(decryptTotp(config.secret_cipher, row.profile.id), code);
+      const recoveryHash = digest(code);
+      const isRecovery = config.confirmed && config.recovery_hashes.includes(recoveryHash);
+      if (!validTotp && !isRecovery) throw new HttpError(401, "Invalid verification code.");
+      await tx.query(
+        "UPDATE user_mfa SET confirmed=true, recovery_hashes=$2 WHERE user_id=$1",
+        [row.profile.id, JSON.stringify(isRecovery
+          ? config.recovery_hashes.filter((hash) => hash !== recoveryHash)
+          : config.recovery_hashes)],
+      );
       await tx.query(
         "DELETE FROM sessions WHERE token_hash=$1 OR expires_at <= now()",
         [digest(token(req))],
       );
       await tx.query(
-        `INSERT INTO sessions(token_hash,user_id,expires_at) VALUES($1,$2,now()+interval '8 hours')`,
-        [digest(raw), row.profile.id],
+        `INSERT INTO sessions(token_hash,user_id,expires_at,mfa_verified,remembered) VALUES($1,$2,now()+($3::int * interval '1 hour'),true,$4)`,
+        [digest(raw), row.profile.id, sessionHours, values.rememberMe],
       );
+      await tx.query("DELETE FROM login_limits WHERE key=$1", [digest(`email:${values.email}`)]);
     });
     res.cookie(cookieName, raw, {
       ...cookieOptions,
-      maxAge: 8 * 60 * 60 * 1000,
+      ...(values.rememberMe ? { maxAge: sessionHours * 60 * 60 * 1000 } : {}),
     });
-    return res.json(await sessionView(row.profile));
+    return res.json(await sessionView({ ...row.profile, isTwoFactorEnabled: true }, values.rememberMe));
   }),
 );
 api.get(
   "/api/auth/session",
-  route(async (req, res) =>
-    res.json(await sessionView((await actor(req)).profile)),
-  ),
+  route(async (req, res) => {
+    const active = await actor(req);
+    return res.json(await sessionView(active.profile, active.remembered));
+  }),
 );
 api.post(
   "/api/auth/logout",
@@ -366,6 +425,50 @@ api.post(
     ),
   ),
 );
+api.patch(
+  "/api/owners/:id/reminder-preferences",
+  route(async (req, res) => {
+    const consent = input.reminderConsentInput.parse(req.body);
+    // Opt-out is a privacy right even when the clinic subscription has expired.
+    const value = await (await db()).transaction(async tx => {
+      const user = (await actor(req, tx)).profile;
+      const record = await tx.query<{ data: ClinicData }>(
+        "SELECT data FROM clinics WHERE id=$1 FOR UPDATE", [user.clinicId],
+      );
+      const data = record.rows[0].data;
+      const owner = data.petOwners.find(o => o.id === req.params.id);
+      if (!owner) throw new HttpError(404, "Owner not found.");
+      if (user.role === "PET_OWNER" && user.ownerId !== owner.id)
+        throw new HttpError(403, "Not your reminder preferences.");
+      if (user.role !== "PET_OWNER") permit(user, "pets:create");
+      owner.emailReminderConsent = consent.emailReminderConsent;
+      owner.smsReminderConsent = consent.smsReminderConsent;
+      await updateOwnerReminders(tx, data, owner);
+      data.auditLogs.unshift({
+        id: randomUUID(), timestamp: new Date().toISOString(),
+        action: "REMINDER_CONSENT_UPDATED", severity: "info",
+        actorId: user.id, actorName: user.name, actorRole: user.role,
+        clinicId: user.clinicId, ipAddress: req.ip || "",
+        targetResource: "Reminder preferences", details: "Consent preferences updated.",
+      });
+      await tx.query("UPDATE clinics SET data=$1 WHERE id=$2", [JSON.stringify(data), user.clinicId]);
+      return { ownerId: owner.id, ...consent };
+    });
+    return res.json(value);
+  }),
+);
+api.get(
+  "/api/reminders",
+  route(async (req, res) => {
+    staffOnly((await actor(req)).profile);
+    const user = (await actor(req)).profile;
+    const records = await (await db()).query(
+      "SELECT id,appointment_id,channel,due_at,status,sent_at,error_code FROM reminder_jobs WHERE clinic_id=$1 ORDER BY due_at DESC LIMIT 100",
+      [user.clinicId],
+    );
+    return res.json({ reminders: records.rows });
+  }),
+);
 api.post(
   "/api/pets",
   route(async (req, res) =>
@@ -473,6 +576,7 @@ api.post(
           status: "Scheduled" as const,
         };
         data.appointments.push(apt);
+        await queueAppointmentReminders(tx, apt, owner);
         return apt;
       }),
     ),
@@ -491,7 +595,7 @@ api.patch(
   "/api/appointments/:id",
   route(async (req, res) =>
     res.json(
-      await mutate(req, "APPOINTMENT_STATUS_CHANGED", (data, user) => {
+      await mutate(req, "APPOINTMENT_STATUS_CHANGED", async (data, user, tx) => {
         const { status } = input.statusInput.parse(req.body);
         permit(
           user,
@@ -508,6 +612,8 @@ api.patch(
         if (status !== apt.status && !transitions[apt.status].includes(status))
           throw new HttpError(409, "Invalid appointment status transition.");
         apt.status = status;
+        if (status === "Cancelled" || status === "No-show")
+          await cancelAppointmentReminders(tx, apt.id);
         return apt;
       }),
     ),
@@ -645,6 +751,34 @@ api.post(
       },
     );
     return res.status(201).json(result);
+  }),
+);
+api.post(
+  "/api/support/chat",
+  route(async (req, res) => {
+    // All four support specialties use real model responses, not mock content.
+    const user = (await actor(req)).profile;
+    const message = supportRequest.parse(req.body);
+    if (!process.env.OPENAI_API_KEY)
+      return res.status(503).json({ error: "Soporte de IA pendiente de configuración del proveedor." });
+    const database = await db();
+    const counter = await database.query<{ attempts: number }>(
+      `INSERT INTO login_limits(key,attempts,reset_at)
+      VALUES($1,1,now()+interval '15 minutes')
+      ON CONFLICT(key) DO UPDATE SET
+      attempts=CASE WHEN login_limits.reset_at < now() THEN 1 ELSE login_limits.attempts+1 END,
+      reset_at=CASE WHEN login_limits.reset_at < now() THEN now()+interval '15 minutes' ELSE login_limits.reset_at END
+      RETURNING attempts`,
+      [digest("support:" + user.id)],
+    );
+    if (counter.rows[0].attempts > 30)
+      return res.status(429).json({ error: "Límite de soporte alcanzado. Inténtalo después." });
+    try {
+      const answer = await supportAnswer(message);
+      return res.json({ agent: message.agent, answer });
+    } catch {
+      return res.status(503).json({ error: "El proveedor de soporte de IA no está disponible ahora." });
+    }
   }),
 );
 api.post(

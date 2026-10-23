@@ -85,5 +85,34 @@ export async function migrate() {
     await tx.query(
       `CREATE INDEX IF NOT EXISTS sessions_user_id ON sessions(user_id)`,
     );
+    await tx.query(
+      `CREATE TABLE IF NOT EXISTS user_mfa (user_id text PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, secret_cipher text NOT NULL, confirmed boolean NOT NULL DEFAULT false, recovery_hashes jsonb NOT NULL DEFAULT '[]'::jsonb)`,
+    );
+    // Old sessions must not bypass the newly required second factor.
+    await tx.query(
+      `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS mfa_verified boolean NOT NULL DEFAULT false`,
+    );
+    await tx.query(
+      `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS remembered boolean NOT NULL DEFAULT false`,
+    );
+    await tx.query(
+      `CREATE TABLE IF NOT EXISTS reminder_jobs (
+        id text PRIMARY KEY,
+        clinic_id text NOT NULL REFERENCES clinics(id),
+        appointment_id text NOT NULL,
+        channel text NOT NULL CHECK(channel IN ('email','sms')),
+        recipient text NOT NULL,
+        due_at timestamptz NOT NULL,
+        status text NOT NULL DEFAULT 'pending',
+        claimed_at timestamptz,
+        sent_at timestamptz,
+        error_code text,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        UNIQUE(appointment_id,channel)
+      )`,
+    );
+    await tx.query(
+      `CREATE INDEX IF NOT EXISTS reminder_jobs_due ON reminder_jobs(status,due_at)`,
+    );
   });
 }
