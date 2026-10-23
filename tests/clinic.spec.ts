@@ -36,6 +36,8 @@ async function start() {
       DATABASE_URL: "",
       STRIPE_SECRET_KEY: "",
       STRIPE_BILLING_MODE: "test",
+      RESEND_API_KEY: "",
+      PASSWORD_RESET_FROM: "",
       BILLING_ENFORCED: "false",
       NODE_ENV: "production",
       PORT: "4317",
@@ -594,4 +596,19 @@ test("subscription return cannot grant access and missing provider disables chec
   expect((await anonymous.get("/api/billing/status")).status()).toBe(401);
   await anonymous.dispose();
   await api.dispose();
+});
+
+test("password recovery refuses missing email configuration and malformed reset links", async () => {
+  test.skip(remote, "Local configuration and negative-case check.");
+  const client = await requests.newContext({ baseURL, extraHTTPHeaders: headers });
+  const requestReset = await client.post("/api/auth/recovery/request", {
+    data: { email: accounts[0].email },
+  });
+  expect(requestReset.status()).toBe(503);
+  expect((await requestReset.json()).error).toContain("not configured");
+  const badToken = await client.post("/api/auth/recovery/confirm", {
+    data: { token: "not-a-token", newPassword: "a-very-long-new-password" },
+  });
+  expect(badToken.status()).toBe(400);
+  await client.dispose();
 });
