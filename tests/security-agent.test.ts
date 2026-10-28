@@ -41,10 +41,11 @@ test("unconfirmed MFA and absent AI provider are reported without treating AI as
 
 test("snapshot aggregates are read-only and do not expose identities", async () => {
   const statements: string[] = [];
-  const sql: Sql = { async query(query: string) {
+  const sql: Sql = { async query<T extends Record<string, unknown>>(query: string): Promise<{ rows: T[] }> {
     statements.push(query);
-    if (query.includes("login_limits")) return { rows: [{ elevated: "2", extreme: "0" }] };
-    return { rows: [{ unenrolled: "1" }] };
+    if (query.includes("login_limits"))
+      return { rows: [{ elevated: "2", extreme: "0" }] as unknown as T[] };
+    return { rows: [{ unenrolled: "1" }] as unknown as T[] };
   }};
   const snapshot = await getSecuritySnapshot(sql, {
     NODE_ENV: "production", APP_URL: "https://staging.example.test",
