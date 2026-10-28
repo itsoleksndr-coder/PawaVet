@@ -1,4 +1,4 @@
-# Verification result — September 20, 2026
+# Verification result — Railway launch preparation
 
 **Local clinic workflow: PASS. Existing public deployment: NO-GO pending deployment/configuration.**
 
@@ -15,19 +15,17 @@ The original default branch was `e07967914d4e4a4792bd2b7a48a1f09bec5c868f`.
 | Booking concurrency | Pass locally | Two simultaneous conflicting bookings return one 201 and one 409. |
 | Urgent intake | Pass locally | Both submission routes work; owner cannot accept/prioritize; staff review is visible to owner after reload. |
 | Mobile | Pass locally | 390×844 viewport, core navigation, no page errors or horizontal overflow. Screenshot inspected. |
-| Existing public URL | Not ready | GET `https://pawa-vet.vercel.app/` returned 200 HTML. `/api/health` and `/api/auth/session` returned 404. |
-| Production control-plane access | Blocked | Existing Vercel project/team request returned 403 requiring authentication to `itsoleksndr-3199s-projects`. |
 | Production database/telemetry | Not verified | No production DATABASE_URL, schema, account provisioning, hosted persistence or telemetry receipt inspected. |
 
 Tests used Node 24.19.0 and Chromium in this workspace. The normal Playwright browser download timed out, so a packaged Chromium binary was used through `BROWSER_EXECUTABLE_PATH`; all UI interactions were real browser actions against the packaged Node server. An additional agent-browser daemon could not start in this environment; Playwright supplied the browser verification and screenshots. The CI workflow uses Playwright's standard Chromium installation on Node 22.
 
-No real patient data, external emails or payment transactions were used. The earlier clinic-workflow commit passed GitHub Actions (run 35490613965). Its Vercel preview reported a successful build but redirected browser access to Vercel login; this is not proof of a functioning hosted app. The subscription update requires its own CI result. No main-branch merge or production promotion is part of this verification result.
+No real patient data, external emails or payment transactions were used. No main-branch merge, Railway deployment, or production promotion is part of this verification result.
 
 ## Remaining launch requirements
 
-- Restore access to the existing Vercel team/project and configure its durable Postgres database and canonical APP_URL.
+- Create a Railway project with separate staging and production environments and configure durable Postgres plus canonical APP_URL.
 - Apply schema and provision a dedicated clinic account; deploy the reviewed branch to preview and run the remote bot.
-- Verify real Postgres/provider connectivity, migration/backup/restore, Vercel API routing, and production telemetry receipt. Local PGlite proof does not substitute for these hosted checks.
+- Verify real Postgres/provider connectivity, migration/backup/restore, Railway healthchecks, and production telemetry. Local PGlite proof does not substitute for these hosted checks.
 - Review the narrowed pilot UI and documented unavailable services in README. Paid launch requires real Stripe test-mode checkout/webhook/portal verification, live account setup, business terms/support/tax review, and the hosted clinic checks. Reminders and AI remain excluded from this release; they are not sold as implemented features.
 
 ## Subscription update
@@ -38,7 +36,7 @@ Six billing tests pass using a synthetic Stripe gateway and an isolated SQL data
 
 **GO:** local demonstration of the verified clinic workflow using synthetic data. Subscription UI may be demonstrated as an unconfigured/test integration.
 
-**NO-GO:** paid production launch today. Existing production API routing is not verified fixed; access to its Vercel team is blocked, hosted Postgres/persistence/restore and telemetry delivery remain unverified, and only a Stripe test account is connected.
+**NO-GO:** paid production launch today. Railway has not yet been provisioned, hosted Postgres/persistence/restore and provider delivery remain unverified, and only a Stripe test account is connected.
 
 **Offer prepared:** $250 USD per clinic per month for staff access, patient records, appointments and staff-reviewed urgent intake, with assisted account provisioning. No email delivery, AI, telemedicine or patient payment processing is included.
 

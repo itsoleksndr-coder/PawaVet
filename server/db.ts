@@ -47,7 +47,7 @@ async function connect(): Promise<Database> {
     };
   }
   // Embedded Postgres is deliberately restricted to local development/testing.
-  if (process.env.VERCEL || !process.env.LOCAL_DATABASE_PATH)
+  if (!process.env.LOCAL_DATABASE_PATH)
     throw new Error(
       "DATABASE_URL is required. No demo storage fallback is enabled.",
     );
@@ -83,7 +83,39 @@ export async function migrate() {
       `CREATE TABLE IF NOT EXISTS login_limits (key text PRIMARY KEY, attempts integer NOT NULL, reset_at timestamptz NOT NULL)`,
     );
     await tx.query(
+      `CREATE TABLE IF NOT EXISTS password_resets (user_id text PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, token_hash text UNIQUE NOT NULL, expires_at timestamptz NOT NULL, created_at timestamptz NOT NULL DEFAULT now())`,
+    );
+    await tx.query(
       `CREATE INDEX IF NOT EXISTS sessions_user_id ON sessions(user_id)`,
+    );
+    await tx.query(
+      `CREATE TABLE IF NOT EXISTS user_mfa (user_id text PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE, secret_cipher text NOT NULL, confirmed boolean NOT NULL DEFAULT false, recovery_hashes jsonb NOT NULL DEFAULT '[]'::jsonb)`,
+    );
+    // Old sessions must not bypass the newly required second factor.
+    await tx.query(
+      `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS mfa_verified boolean NOT NULL DEFAULT false`,
+    );
+    await tx.query(
+      `ALTER TABLE sessions ADD COLUMN IF NOT EXISTS remembered boolean NOT NULL DEFAULT false`,
+    );
+    await tx.query(
+      `CREATE TABLE IF NOT EXISTS reminder_jobs (
+        id text PRIMARY KEY,
+        clinic_id text NOT NULL REFERENCES clinics(id),
+        appointment_id text NOT NULL,
+        channel text NOT NULL CHECK(channel IN ('email','sms')),
+        recipient text NOT NULL,
+        due_at timestamptz NOT NULL,
+        status text NOT NULL DEFAULT 'pending',
+        claimed_at timestamptz,
+        sent_at timestamptz,
+        error_code text,
+        created_at timestamptz NOT NULL DEFAULT now(),
+        UNIQUE(appointment_id,channel)
+      )`,
+    );
+    await tx.query(
+      `CREATE INDEX IF NOT EXISTS reminder_jobs_due ON reminder_jobs(status,due_at)`,
     );
   });
 }

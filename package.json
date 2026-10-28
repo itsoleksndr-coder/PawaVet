@@ -13,15 +13,13 @@
     "db:migrate": "node --import tsx scripts/migrate.ts",
     "db:provision": "node --import tsx scripts/provision.ts",
     "test:e2e": "playwright test",
-    "verify": "npm run build && npm run test:serverless && npm run test:billing && npm run test:e2e",
+    "verify": "npm run build && npm run test:api && npm run test:billing && npm run test:e2e",
     "test:billing": "node --import tsx --test tests/billing.test.ts",
-    "test:serverless": "node --test tests/serverless.test.mjs"
+    "test:api": "node --test tests/api.test.mjs"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.8",
     "@tailwindcss/vite": "^4.1.14",
-    "@vercel/analytics": "^2.0.1",
-    "@vercel/speed-insights": "^2.0.0",
     "@vitejs/plugin-react": "^5.0.4",
     "canvas-confetti": "^1.9.4",
     "dotenv": "^17.2.3",

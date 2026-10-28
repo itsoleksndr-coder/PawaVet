@@ -8,6 +8,7 @@ import type {
   PetOwner,
   Reminder,
   User,
+  TelehealthSession,
 } from "./types";
 export interface UrgentIntake {
   id: string;
@@ -32,6 +33,7 @@ export interface ClinicData {
   reminders: Reminder[];
   invoices: Invoice[];
   auditLogs: AuditLogEntry[];
+  telehealthSessions: TelehealthSession[];
 }
 export interface ClinicSnapshot extends ClinicData {
   staffMembers: User[];
@@ -39,6 +41,7 @@ export interface ClinicSnapshot extends ClinicData {
 export interface AuthSession {
   user: User;
   clinic: Clinic;
+  rememberMe?: boolean;
 }
 export const emptyData = (): ClinicData => ({
   pets: [],
@@ -49,4 +52,5 @@ export const emptyData = (): ClinicData => ({
   reminders: [],
   invoices: [],
   auditLogs: [],
+  telehealthSessions: [],
 });
