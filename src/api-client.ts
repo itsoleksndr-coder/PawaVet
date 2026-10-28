@@ -2,13 +2,14 @@ export async function request<T>(
   path: string,
   method = "GET",
   body?: unknown,
+  timeoutMs = 20_000,
 ): Promise<T> {
   const response = await fetch(path, {
     method,
     credentials: "same-origin",
     headers: { "Content-Type": "application/json", "X-PawaVet-Request": "1" },
     body: body === undefined ? undefined : JSON.stringify(body),
-    signal: AbortSignal.timeout(20000),
+    signal: AbortSignal.timeout(timeoutMs),
   });
   const payload = await response
     .json()
