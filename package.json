@@ -13,9 +13,10 @@
     "db:migrate": "node --import tsx scripts/migrate.ts",
     "db:provision": "node --import tsx scripts/provision.ts",
     "test:e2e": "playwright test",
-    "verify": "npm run build && npm run test:api && npm run test:billing && npm run test:e2e",
+    "verify": "npm run build && npm run test:api && npm run test:support && npm run test:billing && npm run test:e2e",
     "test:billing": "node --import tsx --test tests/billing.test.ts",
-    "test:api": "node --test tests/api.test.mjs"
+    "test:api": "node --test tests/api.test.mjs",
+    "test:support": "node --import tsx --test tests/support.test.ts"
   },
   "dependencies": {
     "@electric-sql/pglite": "^0.5.8",

@@ -89,6 +89,8 @@ For **email** (Resend), configure `RESEND_API_KEY` and a verified `REMINDER_FROM
 ## Four AI support specialists (code complete, provider activation outstanding)
 The Support tab exposes Citas/recordatorios, Cuentas/acceso, Facturación and Soporte técnico, each with distinct model instructions. They use the OpenAI Responses API through the backend, never an invented canned answer. Configure `OPENAI_API_KEY` on Railway and optionally `OPENAI_MODEL` (default `gpt-4.1-mini`), then verify actual API replies with a synthetic account. Until configured, the endpoint explicitly returns 503 without pretending that assistance was generated. Authenticated sessions and per-account throttling protect the endpoint. Requests use `store=false`; no patient records or database tables are passed automatically to the provider. The support specialists are available on-demand while the web service and third-party provider are operating. They are not independent background agents, cannot modify appointments, and make no uptime guarantee.
 
+The automated support test checks the four-agent registry, input validation and the safe unconfigured-provider response. A live provider check remains a deployment acceptance step and must use a synthetic account; never place `OPENAI_API_KEY` in the browser, repository, logs or `VITE_*` variables.
+
 ## Deployment checklist for the above features
 1. Keep this feature branch as a draft PR until all tests pass and a staging environment has exercised the workflows.
 2. Configure and securely back up `MFA_ENCRYPTION_KEY`, verified notification provider credentials, and the AI provider API key directly in Railway's protected variables. Never paste secrets into code, chat, tickets or PRs.

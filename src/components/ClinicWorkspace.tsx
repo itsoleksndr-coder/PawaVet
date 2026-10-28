@@ -211,7 +211,7 @@ export function ClinicWorkspace() {
               review.
             </p>
             <p className="text-sm text-amber-300">
-              Outbound reminders and AI support require provider credentials and an enabled Railway worker. Telemedicine is not available in this release.
+              Outbound reminders and AI support require provider credentials and an enabled Railway worker. Telemedicine requires the approved room provider configuration.
             </p>
           </>
         )}
