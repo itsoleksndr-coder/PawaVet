@@ -97,3 +97,9 @@ The automated support test checks the four-agent registry, input validation and 
 3. Verify sender/phone ownership, opt-in records, recovery operations, missing-provider responses and provider acceptance on synthetic test recipients.
 4. Re-run `npm run verify`, check an independent dependency vulnerability audit, then test on a staged instance. A successful build alone is not proof of end-to-end message delivery.
 5. Merge and deploy only after the production authentication/key migration and rollback plan have been reviewed.
+
+## Cybersecurity monitoring pilot (development only)
+
+`GET /api/security/agent/status` is a read-only, platform **SUPER_ADMIN** endpoint that aggregates active authentication throttling pressure and incomplete MFA enrolments and checks the server's required security configuration. It returns coded findings and remediation advice without account identifiers, secrets or clinical records. `POST /api/security/agent/triage` optionally asks the server-side OpenAI Responses API to interpret those *aggregate findings only*, subject to a five-per-15-minute limit. Missing provider credentials produce an explicit 503. AI does **not** change infrastructure, accounts, appointments or records. The monitor is on-demand, not continuous, and does not prove an intrusion occurred. Run `npm run test:security`.
+
+**Do not treat this pilot as launch approval.** Before production requires an independent security assessment, authorized application penetration testing, external edge/WAF and audit monitoring, alert delivery/on-call responsibility, secure backups and restoration drills, vulnerability scanning, provider-backed live AI triage verification, incident response and rollback practice. Configure the server-side `OPENAI_API_KEY` only via Railway protected variables; never expose it in the browser. The security scanner alone cannot guarantee protection and is not a replacement for external monitoring.

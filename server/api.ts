@@ -10,6 +10,7 @@ import { digest, hashPassword, verifyPassword } from "./security";
 import { newTotpSecret, encryptTotp, decryptTotp, verifyTotp, recoveryCodes } from "./mfa";
 import { queueAppointmentReminders, cancelAppointmentReminders, updateOwnerReminders } from "./reminders";
 import { supportRequest, supportAnswer } from "./support";
+import { getSecuritySnapshot, triageSecurityFindings } from "./cyber-agent";
 import * as input from "./validation";
 import {
   ROLE_PERMISSIONS,
@@ -925,6 +926,47 @@ api.post(
     }
   }),
 );
+api.get(
+  "/api/security/agent/status",
+  route(async (req, res) => {
+    // The snapshot summarizes authentication activity across the deployment,
+    // so only the platform super-admin may view it.
+    const user = (await actor(req)).profile;
+    if (user.role !== "SUPER_ADMIN")
+      throw new HttpError(403, "Platform security administrator access required.");
+    return res.json(await getSecuritySnapshot(await db()));
+  }),
+);
+api.post(
+  "/api/security/agent/triage",
+  route(async (req, res) => {
+    const user = (await actor(req)).profile;
+    if (user.role !== "SUPER_ADMIN")
+      throw new HttpError(403, "Platform security administrator access required.");
+    if (!process.env.OPENAI_API_KEY)
+      return res.status(503).json({ error: "Security AI provider is not configured." });
+    const database = await db();
+    const counter = await database.query<{ attempts: number }>(
+      `INSERT INTO login_limits(key,attempts,reset_at)
+       VALUES($1,1,now()+interval '15 minutes')
+       ON CONFLICT(key) DO UPDATE SET
+       attempts=CASE WHEN login_limits.reset_at < now() THEN 1 ELSE login_limits.attempts+1 END,
+       reset_at=CASE WHEN login_limits.reset_at < now() THEN now()+interval '15 minutes' ELSE login_limits.reset_at END
+       RETURNING attempts`,
+      [digest("security-triage:" + user.id)],
+    );
+    if (counter.rows[0].attempts > 5)
+      return res.status(429).json({ error: "Security triage rate limit reached." });
+    const snapshot = await getSecuritySnapshot(database);
+    try {
+      const recommendation = await triageSecurityFindings(snapshot);
+      return res.json({ snapshot, recommendation, automatedActionTaken: false });
+    } catch {
+      return res.status(503).json({ error: "Security AI triage is unavailable." });
+    }
+  }),
+);
+
 api.post(
   "/api/ai/assistant",
   route(async (req, res) => {
