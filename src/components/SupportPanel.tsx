@@ -23,7 +23,7 @@ export function SupportPanel() {
     try {
       const result = await request<{ answer: string; agent: Category }>("/api/support/chat", "POST", {
         agent, message, history: history.slice(-8),
-      });
+      }, 30_000);
       setHistory([...history, { role: "user", content: message }, { role: "assistant", content: result.answer }]);
       setDraft("");
     } catch (e) {
