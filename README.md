@@ -97,3 +97,6 @@ The automated support test checks the four-agent registry, input validation and 
 3. Verify sender/phone ownership, opt-in records, recovery operations, missing-provider responses and provider acceptance on synthetic test recipients.
 4. Re-run `npm run verify`, check an independent dependency vulnerability audit, then test on a staged instance. A successful build alone is not proof of end-to-end message delivery.
 5. Merge and deploy only after the production authentication/key migration and rollback plan have been reviewed.
+
+
+> Railway note (2026-10-29): `railway.json` is retained for compatibility with existing Railway services. For a newly created service, configure the equivalent build command (`npm run build`), pre-deploy command (`npm run db:migrate`), start command (`npm start`) and healthcheck (`/api/health`) in the Railway service settings, or migrate the project to Railway Infrastructure as Code before the legacy Config-as-Code cutoff. Do not assume the file alone configured a new service.
