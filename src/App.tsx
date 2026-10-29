@@ -1,6 +1,4 @@
 import React from "react";
-import { Analytics } from "@vercel/analytics/react";
-import { SpeedInsights } from "@vercel/speed-insights/react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { DataProvider } from "./context/DataContext";
 import { AuthModal } from "./components/auth/AuthModal";
@@ -23,12 +21,6 @@ function SessionGate() {
         </DataProvider>
       ) : (
         <AuthModal isOpen onClose={() => {}} />
-      )}
-      {import.meta.env.VITE_ENABLE_ANALYTICS === "true" && (
-        <>
-          <Analytics />
-          <SpeedInsights />
-        </>
       )}
     </>
   );

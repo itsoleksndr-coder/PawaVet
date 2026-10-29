@@ -6,13 +6,6 @@ import { defineConfig } from "vite";
 export default defineConfig(() => {
   return {
     plugins: [react(), tailwindcss()],
-    define: {
-      "import.meta.env.VITE_ENABLE_ANALYTICS": JSON.stringify(
-        process.env.VERCEL === "1"
-          ? "true"
-          : process.env.VITE_ENABLE_ANALYTICS || "false",
-      ),
-    },
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "."),
