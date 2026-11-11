@@ -22,7 +22,7 @@ jobs:
           node-version: '22'
       - name: Confirm database readiness and anonymous isolation
         env:
-          BASE_URL: https://pawavet-web-production.up.railway.app
+          BASE_URL: https://pawavet.up.railway.app
         run: |
           node --input-type=module <<'JS'
           import assert from 'node:assert/strict';
